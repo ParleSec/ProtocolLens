@@ -1,0 +1,268 @@
+import { useParams, Link } from 'react-router-dom'
+import { motion } from 'framer-motion'
+import { 
+  ArrowLeft, ArrowRight, Shield, Lock, Key, 
+  Unlock, Fingerprint, Zap, Eye, CheckCircle2, Loader2
+} from 'lucide-react'
+import { useProtocol, useProtocolFlows } from '../protocols'
+import { protocolMeta } from '../protocols/registry'
+
+// Flow UI metadata (icons, colors) - modular extension point
+const flowMeta: Record<string, { 
+  icon: React.ElementType
+  color: string
+  features: string[]
+  recommended?: boolean 
+}> = {
+  // OAuth 2.0 flows
+  'authorization_code': {
+    icon: Shield,
+    color: 'from-purple-500 to-indigo-600',
+    features: ['Server-side Apps', 'Confidential Clients', 'Client Secret'],
+  },
+  'authorization_code_pkce': {
+    icon: Lock,
+    color: 'from-cyan-500 to-blue-600',
+    features: ['Single Page Apps', 'Mobile Apps', 'No Client Secret'],
+    recommended: true,
+  },
+  'client_credentials': {
+    icon: Key,
+    color: 'from-orange-500 to-red-600',
+    features: ['Microservices', 'Background Jobs', 'No User Context'],
+  },
+  'refresh_token': {
+    icon: Unlock,
+    color: 'from-green-500 to-emerald-600',
+    features: ['Token Rotation', 'Long Sessions', 'Silent Refresh'],
+  },
+  // OIDC flows
+  'oidc_authorization_code': {
+    icon: Fingerprint,
+    color: 'from-purple-500 to-pink-600',
+    features: ['ID Token (JWT)', 'UserInfo Endpoint', 'Verified Identity'],
+    recommended: true,
+  },
+  'oidc_implicit': {
+    icon: Unlock,
+    color: 'from-amber-500 to-orange-600',
+    features: ['Legacy Flow', 'Direct Token Response', 'Not Recommended'],
+  },
+}
+
+// Map flow IDs to URL slugs
+function flowIdToSlug(id: string): string {
+  return id.replace(/_/g, '-')
+}
+
+export function ProtocolDemo() {
+  const { protocolId } = useParams()
+  
+  // Fetch from modular plugin system
+  const { protocol, loading: protocolLoading } = useProtocol(protocolId)
+  const { flows, loading: flowsLoading } = useProtocolFlows(protocolId)
+  
+  const loading = protocolLoading || flowsLoading
+  
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <Loader2 className="w-8 h-8 text-accent-orange animate-spin" />
+      </div>
+    )
+  }
+  
+  if (!protocol) {
+    return (
+      <div className="text-center py-20">
+        <h1 className="text-2xl font-bold text-white mb-4">Protocol Not Found</h1>
+        <Link to="/" className="text-accent-orange hover:underline">
+          Back to Dashboard
+        </Link>
+      </div>
+    )
+  }
+
+  const meta = protocolMeta[protocolId || ''] || protocolMeta.oauth2
+  const ProtocolIcon = protocolId === 'oidc' ? Fingerprint : Shield
+
+  // Get first recommended flow for quick action
+  const recommendedFlow = flows.find(f => flowMeta[f.id]?.recommended) || flows[0]
+
+  return (
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <Link
+          to="/"
+          className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </Link>
+        <div className="flex-1">
+          <h1 className="font-display text-3xl font-bold text-white flex items-center gap-3">
+            <ProtocolIcon className="w-8 h-8 text-accent-orange" />
+            {protocol.name}
+          </h1>
+          <p className="text-surface-400 mt-2 max-w-3xl">{protocol.description}</p>
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="flex flex-wrap gap-3">
+        {recommendedFlow && (
+          <Link
+            to={`/protocol/${protocolId}/flow/${flowIdToSlug(recommendedFlow.id)}`}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-accent-orange to-accent-purple text-white font-medium hover:opacity-90 transition-opacity"
+          >
+            <Zap className="w-4 h-4" />
+            Start with Recommended Flow
+          </Link>
+        )}
+        <Link
+          to="/looking-glass"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white font-medium hover:bg-white/10 transition-colors"
+        >
+          <Eye className="w-4 h-4" />
+          Open Looking Glass
+        </Link>
+      </div>
+
+      {/* Flows Grid - Data from modular plugins */}
+      <div>
+        <h2 className="font-display text-xl font-semibold text-white mb-4">
+          Available Flows
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {flows.map((flow, idx) => {
+            const meta = flowMeta[flow.id] || { 
+              icon: Shield, 
+              color: 'from-gray-500 to-gray-600',
+              features: []
+            }
+            const FlowIcon = meta.icon
+            
+            return (
+              <motion.div
+                key={flow.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.1 }}
+              >
+                <Link
+                  to={`/protocol/${protocolId}/flow/${flowIdToSlug(flow.id)}`}
+                  className="block relative overflow-hidden rounded-2xl p-6 bg-surface-900/50 border border-white/5 hover:border-white/10 transition-all group hover:shadow-xl"
+                >
+                  {/* Gradient accent */}
+                  <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${meta.color}`} />
+                  
+                  {/* Recommended badge */}
+                  {meta.recommended && (
+                    <div className="absolute top-4 right-4 flex items-center gap-1 px-2 py-1 rounded-full bg-green-500/10 text-green-400 text-xs font-medium border border-green-500/20">
+                      <CheckCircle2 className="w-3 h-3" />
+                      Recommended
+                    </div>
+                  )}
+
+                  <div className="flex items-start gap-4">
+                    <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${meta.color} flex items-center justify-center shadow-lg`}>
+                      <FlowIcon className="w-7 h-7 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0 pr-8">
+                      <h3 className="font-display text-lg font-semibold text-white group-hover:text-white transition-colors">
+                        {flow.name}
+                      </h3>
+                      <p className="text-surface-400 text-sm mt-1 line-clamp-2">
+                        {flow.description}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Features */}
+                  {meta.features.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-4">
+                      {meta.features.map(feature => (
+                        <span 
+                          key={feature}
+                          className="px-2.5 py-1 rounded-lg bg-white/5 text-xs text-surface-400"
+                        >
+                          {feature}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Action hint */}
+                  <div className="flex items-center gap-1 mt-4 text-sm text-surface-500 group-hover:text-accent-orange transition-colors">
+                    <span>View flow diagram</span>
+                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </Link>
+              </motion.div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Protocol Features - from modular meta */}
+      <div className="glass rounded-xl p-6">
+        <h2 className="font-display text-lg font-semibold text-white mb-4">
+          {protocol.name} Features
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {meta.features.slice(0, 3).map((feature, i) => (
+            <FeatureCard
+              key={feature}
+              title={feature}
+              description={getFeatureDescription(feature)}
+              color={['blue', 'green', 'purple'][i % 3]}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Feature descriptions for protocol features
+function getFeatureDescription(feature: string): string {
+  const descriptions: Record<string, string> = {
+    // OAuth 2.0 features
+    'Authorization Code Flow': 'Standard flow for server-side applications',
+    'PKCE for Public Clients': 'Enhanced security for SPAs and mobile apps',
+    'Client Credentials': 'Machine-to-machine authentication',
+    'Refresh Token Rotation': 'Secure token refresh with rotation',
+    'Token Introspection': 'Verify token validity and metadata',
+    'Token Revocation': 'Invalidate tokens before expiration',
+    // OIDC features
+    'ID Token (JWT)': 'JWT containing verified identity claims (sub, name, email)',
+    'UserInfo Endpoint': 'API endpoint returning additional user claims',
+    'Discovery Document': 'Auto-configuration via /.well-known/openid-configuration',
+    'Standard Claims': 'Standardized user attributes (sub, name, email, picture)',
+    'Nonce Protection': 'Prevents ID token replay attacks',
+    'Signature Verification': 'Validate tokens using JWKS public keys',
+    'Claims & Scopes': 'Request specific user data with standard scopes',
+    'Hybrid Flows': 'Combined response types for flexibility',
+    'Session Management': 'Track and manage user sessions',
+  }
+  return descriptions[feature] || feature
+}
+
+function FeatureCard({ title, description, color }: {
+  title: string
+  description: string
+  color: string
+}) {
+  const colorClasses: Record<string, string> = {
+    blue: 'bg-blue-500/10 border-blue-500/20 text-blue-400',
+    green: 'bg-green-500/10 border-green-500/20 text-green-400',
+    purple: 'bg-purple-500/10 border-purple-500/20 text-purple-400',
+  }
+
+  return (
+    <div className={`p-4 rounded-xl border ${colorClasses[color]}`}>
+      <h3 className="font-medium text-white mb-1">{title}</h3>
+      <p className="text-sm text-surface-400">{description}</p>
+    </div>
+  )
+}
