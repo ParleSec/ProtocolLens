@@ -20,6 +20,9 @@ export {
   useLookingGlassSession,
   useFlowSimulation,
   useLookingGlassConfig,
+  useRealFlowExecutor,
+  type UseRealFlowExecutorOptions,
+  type RealFlowExecutorResult,
 } from './hooks'
 
 // Legacy executor (for backwards compatibility)
@@ -59,6 +62,7 @@ export {
   OIDCHybridExecutor,
   ResourceOwnerExecutor,
 } from './flows'
+
 
 // Components
 export * from './components'

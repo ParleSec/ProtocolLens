@@ -314,3 +314,239 @@ export function useLookingGlassConfig(initialConfig: Partial<LookingGlassConfig>
   return { config, updateConfig }
 }
 
+// ============================================================================
+// Real Flow Executor Hook
+// ============================================================================
+
+import {
+  createFlowExecutor,
+  getFlowInfo,
+  getFlowRequirements,
+  type FlowExecutorBase,
+  type FlowExecutorState,
+  type ExecutorFactoryConfig,
+} from './flows'
+
+export interface UseRealFlowExecutorOptions {
+  /** Protocol ID (oauth2, oidc) */
+  protocolId: string | null
+  /** Flow ID from the backend */
+  flowId: string | null
+  /** Client ID */
+  clientId: string
+  /** Client secret (for confidential client flows) */
+  clientSecret?: string
+  /** Redirect URI */
+  redirectUri: string
+  /** Scopes */
+  scopes: string[]
+  /** Refresh token (for refresh-token flow) */
+  refreshToken?: string
+  /** Username (for password flow) */
+  username?: string
+  /** Password (for password flow) */
+  password?: string
+}
+
+export interface RealFlowExecutorResult {
+  /** Current execution state */
+  state: FlowExecutorState | null
+  /** Execute the flow */
+  execute: () => Promise<void>
+  /** Abort execution */
+  abort: () => void
+  /** Reset to initial state */
+  reset: () => void
+  /** Whether currently executing */
+  isExecuting: boolean
+  /** Flow info */
+  flowInfo: {
+    supported: boolean
+    description: string
+    rfcReference: string
+    requiresUserInteraction: boolean
+  } | null
+  /** What this flow requires */
+  requirements: {
+    requiresClientSecret: boolean
+    requiresRefreshToken: boolean
+    requiresCredentials: boolean
+  }
+  /** Error message if flow not supported */
+  error: string | null
+}
+
+/**
+ * Map backend flow IDs to executor flow IDs
+ */
+function mapFlowId(protocolId: string | null, backendFlowId: string | null): string | null {
+  if (!backendFlowId) return null
+
+  // Normalize the flow ID
+  const normalizedId = backendFlowId.toLowerCase().replace(/_/g, '-')
+
+  // Protocol-specific mappings
+  if (protocolId === 'oidc') {
+    switch (normalizedId) {
+      case 'authorization-code':
+      case 'authorization-code-pkce':
+        return 'oidc-authorization-code'
+      case 'implicit':
+        return 'oidc-implicit'
+      case 'hybrid':
+      case 'code-id-token':
+      case 'code-token':
+        return 'oidc-hybrid'
+      default:
+        // Fall through to OAuth mappings
+        break
+    }
+  }
+
+  // OAuth 2.0 mappings
+  switch (normalizedId) {
+    case 'authorization-code':
+      return 'authorization-code'
+    case 'authorization-code-pkce':
+    case 'pkce':
+      return 'authorization-code-pkce'
+    case 'client-credentials':
+      return 'client-credentials'
+    case 'implicit':
+      return 'implicit'
+    case 'refresh-token':
+    case 'refresh':
+      return 'refresh-token'
+    case 'device-code':
+    case 'device':
+    case 'device-authorization':
+      return 'device-code'
+    case 'password':
+    case 'resource-owner':
+    case 'ropc':
+      return 'password'
+    default:
+      // Try the ID as-is
+      return normalizedId
+  }
+}
+
+/**
+ * Hook for creating and managing RFC-compliant flow executors
+ */
+export function useRealFlowExecutor(options: UseRealFlowExecutorOptions): RealFlowExecutorResult {
+  const executorRef = useRef<FlowExecutorBase | null>(null)
+  const [state, setState] = useState<FlowExecutorState | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  // Map the flow ID
+  const executorFlowId = useMemo(() => 
+    mapFlowId(options.protocolId, options.flowId),
+    [options.protocolId, options.flowId]
+  )
+
+  // Get flow info and requirements
+  const flowInfo = useMemo(() => 
+    executorFlowId ? getFlowInfo(executorFlowId) : null,
+    [executorFlowId]
+  )
+
+  const requirements = useMemo(() => 
+    executorFlowId ? getFlowRequirements(executorFlowId) : {
+      requiresClientSecret: false,
+      requiresRefreshToken: false,
+      requiresCredentials: false,
+    },
+    [executorFlowId]
+  )
+
+  // Create executor when flow changes
+  useEffect(() => {
+    // Clean up previous executor
+    if (executorRef.current) {
+      executorRef.current.abort()
+      executorRef.current = null
+    }
+    setState(null)
+    setError(null)
+
+    if (!executorFlowId || !options.protocolId) {
+      return
+    }
+
+    // Build config
+    const config: ExecutorFactoryConfig = {
+      protocolBaseUrl: `/${options.protocolId}`,
+      clientId: options.clientId,
+      clientSecret: options.clientSecret,
+      redirectUri: options.redirectUri,
+      scopes: options.scopes,
+      refreshToken: options.refreshToken,
+      username: options.username,
+      password: options.password,
+    }
+
+    // Create the executor
+    const executor = createFlowExecutor(executorFlowId, config)
+
+    if (!executor) {
+      setError(`Flow "${options.flowId}" is not supported for live execution yet`)
+      return
+    }
+
+    executorRef.current = executor
+
+    // Subscribe to state changes
+    const unsubscribe = executor.subscribe(setState)
+
+    return () => {
+      unsubscribe()
+      executor.abort()
+    }
+  }, [
+    executorFlowId,
+    options.protocolId,
+    options.clientId,
+    options.clientSecret,
+    options.redirectUri,
+    options.scopes,
+    options.refreshToken,
+    options.username,
+    options.password,
+    options.flowId,
+  ])
+
+  const execute = useCallback(async () => {
+    if (!executorRef.current) {
+      setError('No executor available')
+      return
+    }
+
+    try {
+      await executorRef.current.execute()
+    } catch (err) {
+      console.error('Flow execution error:', err)
+    }
+  }, [])
+
+  const abort = useCallback(() => {
+    executorRef.current?.abort()
+  }, [])
+
+  const reset = useCallback(() => {
+    executorRef.current?.reset()
+  }, [])
+
+  const isExecuting = state?.status === 'executing' || state?.status === 'awaiting_user'
+
+  return {
+    state,
+    execute,
+    abort,
+    reset,
+    isExecuting,
+    flowInfo,
+    requirements,
+    error,
+  }
+}

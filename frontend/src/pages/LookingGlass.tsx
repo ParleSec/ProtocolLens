@@ -3,15 +3,15 @@
  * 
  * Protocol-agnostic inspection interface for authentication flows.
  * Supports both simulation mode (animated walkthrough) and live execution
- * mode (real protocol flows against the MockIdP).
+ * mode (real RFC-compliant protocol flows against the MockIdP).
  */
 
-import React, { useState, useCallback, useMemo } from 'react'
+import React, { useState, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
 import { 
   Eye, Clock, Play, RotateCcw, Zap, Key, 
   Wifi, WifiOff, Info, Shield, AlertTriangle,
-  Sparkles, Radio,
+  Sparkles, Radio, Book,
 } from 'lucide-react'
 
 // Import modular Looking Glass system
@@ -19,18 +19,17 @@ import {
   useProtocols,
   useFlowSimulation,
   useLookingGlassSession,
-  useFlowExecutor,
+  useRealFlowExecutor,
   FlowVisualizer,
   StepDetail,
   ProtocolSelector,
   ProtocolFlowBadge,
-  LiveExecutionPanel,
+  RealFlowPanel,
   getActorsForFlow,
   type LookingGlassProtocol,
   type LookingGlassFlow,
   type LookingGlassStep,
   type LookingGlassEvent,
-  type FlowExecutionConfig,
 } from '../lookingglass'
 
 import { TokenInspector } from '../components/lookingglass/TokenInspector'
@@ -66,22 +65,17 @@ export function LookingGlass() {
   // Live session (if sessionId provided in URL)
   const session = useLookingGlassSession(urlSessionId || null)
 
-  // Build executor config based on selected flow
-  // Protocol routes are at root level: /oauth2/authorize, /oidc/authorize, etc.
-  // Use 'public-app' for browser-based flows with PKCE (no client secret needed)
-  const executorConfig: FlowExecutionConfig = useMemo(() => ({
-    authServerUrl: `/${selectedProtocol?.id || 'oauth2'}`, // Routes are at /{protocol}/...
-    clientId: 'public-app', // Public client for SPA - uses PKCE instead of client secret
+  // NEW: Real flow executor - uses flow-specific RFC-compliant executors
+  const realExecutor = useRealFlowExecutor({
+    protocolId: selectedProtocol?.id || null,
+    flowId: selectedFlow?.id || null,
+    clientId: 'public-app', // Public client for browser-based flows
+    clientSecret: undefined, // Will be needed for client-credentials flow
     redirectUri: `${window.location.origin}/callback`,
     scopes: selectedProtocol?.id === 'oidc' 
       ? ['openid', 'profile', 'email'] 
       : ['profile', 'email'],
-    usePkce: true,
-    isOidc: selectedProtocol?.id === 'oidc',
-  }), [selectedProtocol])
-
-  // Live flow executor
-  const executor = useFlowExecutor(executorConfig)
+  })
 
   // Handle protocol selection
   const handleProtocolSelect = useCallback((protocol: LookingGlassProtocol) => {
@@ -90,8 +84,8 @@ export function LookingGlass() {
     setSelectedStep(null)
     setSelectedStepIndex(-1)
     simulation.resetSimulation()
-    executor.reset()
-  }, [simulation, executor])
+    realExecutor.reset()
+  }, [simulation, realExecutor])
 
   // Handle flow selection
   const handleFlowSelect = useCallback((flow: LookingGlassFlow) => {
@@ -99,8 +93,8 @@ export function LookingGlass() {
     setSelectedStep(null)
     setSelectedStepIndex(-1)
     simulation.resetSimulation()
-    executor.reset()
-  }, [simulation, executor])
+    realExecutor.reset()
+  }, [simulation, realExecutor])
 
   // Handle step click
   const handleStepClick = useCallback((step: LookingGlassStep, index: number) => {
@@ -121,10 +115,10 @@ export function LookingGlass() {
   const handleReset = useCallback(() => {
     simulation.resetSimulation()
     session.clearEvents()
-    executor.reset()
+    realExecutor.reset()
     setSelectedStep(null)
     setSelectedStepIndex(-1)
-  }, [simulation, session, executor])
+  }, [simulation, session, realExecutor])
 
   // Convert simulation events to timeline events
   const timelineEvents: TimelineEvent[] = (urlSessionId ? session.events : simulation.events).map((event: LookingGlassEvent) => ({
@@ -184,7 +178,7 @@ export function LookingGlass() {
               }`}
             >
               <Radio className="w-3.5 h-3.5" />
-              Live Execution
+              Real Protocol
             </button>
           </div>
 
@@ -254,29 +248,42 @@ export function LookingGlass() {
           onFlowSelect={handleFlowSelect}
           loading={protocolsLoading}
         />
+        
+        {/* Show RFC reference for selected flow */}
+        {mode === 'live' && realExecutor.flowInfo && (
+          <div className="mt-4 p-3 rounded-lg bg-indigo-500/5 border border-indigo-500/20">
+            <div className="flex items-center gap-2 text-sm">
+              <Book className="w-4 h-4 text-indigo-400" />
+              <span className="text-indigo-400 font-mono">{realExecutor.flowInfo.rfcReference}</span>
+              <span className="text-surface-400">—</span>
+              <span className="text-surface-300">{realExecutor.flowInfo.description}</span>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Live Execution Panel - Only shown in live mode when flow is selected */}
+      {/* Real Protocol Execution Panel - Only shown in live mode when flow is selected */}
       {mode === 'live' && selectedFlow && (
         <div className="glass rounded-xl p-6 relative z-10">
           <h2 className="font-display font-semibold text-white mb-4 flex items-center gap-2">
             <Radio className="w-5 h-5 text-green-400" />
-            Live Protocol Execution
+            Real Protocol Execution
             <span className="ml-2 px-2 py-0.5 rounded text-xs bg-green-500/10 text-green-400 border border-green-500/20">
-              Real Flow
+              RFC Compliant
             </span>
           </h2>
           <p className="text-surface-400 text-sm mb-4">
-            Execute a real {selectedProtocol?.name} {selectedFlow.name} against the MockIdP. 
-            All requests, responses, and tokens are captured and decoded in real-time.
+            Execute the <strong>{selectedFlow.name}</strong> flow with real HTTP requests per {realExecutor.flowInfo?.rfcReference || 'RFC specifications'}.
           </p>
-          <LiveExecutionPanel
-            state={executor.state}
-            onExecute={executor.execute}
-            onAbort={executor.abort}
-            onReset={executor.reset}
-            isExecuting={executor.isExecuting}
-            flowName={selectedFlow.name}
+          <RealFlowPanel
+            state={realExecutor.state}
+            onExecute={realExecutor.execute}
+            onAbort={realExecutor.abort}
+            onReset={realExecutor.reset}
+            isExecuting={realExecutor.isExecuting}
+            flowInfo={realExecutor.flowInfo}
+            requirements={realExecutor.requirements}
+            error={realExecutor.error}
           />
         </div>
       )}
@@ -368,9 +375,9 @@ export function LookingGlass() {
         </h2>
         <p className="text-surface-400 text-sm mb-4">
           Paste any JWT token to decode it and see the header, payload, and signature validation status.
-          {mode === 'live' && executor.state?.accessToken && (
+          {mode === 'live' && realExecutor.state?.tokens.accessToken && (
             <button
-              onClick={() => setPastedToken(executor.state?.accessToken || '')}
+              onClick={() => setPastedToken(realExecutor.state?.tokens.accessToken || '')}
               className="ml-2 text-accent-cyan hover:underline"
             >
               Use captured access token →
