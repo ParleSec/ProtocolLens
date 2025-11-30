@@ -1,289 +1,266 @@
 import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
 import { 
-  Shield, Lock, Key, Eye, ArrowRight, Zap, 
-  ChevronRight, Users, Fingerprint
+  Shield, Eye, Terminal, Fingerprint, 
+  ExternalLink, ChevronRight, Key, 
+  Code, FileSearch, Zap
 } from 'lucide-react'
-
-// Protocol cards
-const protocolCards = [
-  {
-    id: 'oauth2',
-    name: 'OAuth 2.0',
-    description: 'The industry-standard protocol for authorization. Delegate access to resources without sharing credentials.',
-    icon: Shield,
-    color: 'from-purple-500 to-indigo-600',
-    shadowColor: 'shadow-purple-500/25',
-    flowCount: 4,
-    features: ['Access Tokens', 'Refresh Tokens', 'Scopes', 'PKCE'],
-  },
-  {
-    id: 'oidc',
-    name: 'OpenID Connect',
-    description: 'Identity layer on top of OAuth 2.0. Verify user identity and obtain profile information.',
-    icon: Fingerprint,
-    color: 'from-green-500 to-emerald-600',
-    shadowColor: 'shadow-green-500/25',
-    flowCount: 3,
-    features: ['ID Tokens', 'UserInfo', 'Claims', 'SSO'],
-  },
-]
 
 export function Dashboard() {
   return (
-    <div className="space-y-12">
-      {/* Hero Section */}
-      <section className="text-center py-8">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-4"
-        >
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-accent-orange/10 border border-accent-orange/20 text-accent-orange text-sm font-medium mb-4">
-            <Zap className="w-4 h-4" />
-            Interactive Security Protocol Showcase
-          </div>
-          
-          <h1 className="font-display text-4xl md:text-5xl font-bold text-white">
-            Master <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent-orange to-accent-purple">OAuth 2.0</span> & <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent-purple to-accent-cyan">OIDC</span>
-          </h1>
-          
-          <p className="text-surface-400 text-lg max-w-2xl mx-auto">
-            Explore authentication protocols through interactive diagrams, 
-            live demonstrations, and detailed security analysis.
-          </p>
+    <div className="max-w-4xl mx-auto space-y-10">
+      {/* Header */}
+      <header className="py-4">
+        <div className="flex items-center gap-2 text-amber-400 font-mono text-sm mb-3">
+          <Terminal className="w-4 h-4" />
+          <span>protocol-soup v1.0</span>
+        </div>
+        <h1 className="text-3xl font-semibold text-white mb-3 flex items-center gap-3">
+          Protocol Soup
+          <span className="text-3xl">🍜</span>
+        </h1>
+        <p className="text-surface-300 text-lg max-w-2xl">
+          Learn authentication protocols by running them. Execute real OAuth 2.0 and OpenID Connect 
+          flows against a local identity provider and see exactly what happens at each step.
+        </p>
+      </header>
 
-          <div className="flex items-center justify-center gap-4 pt-4">
-            <Link
-              to="/protocol/oauth2"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-accent-orange to-accent-purple text-white font-medium hover:opacity-90 transition-opacity shadow-lg shadow-accent-orange/25"
-            >
-              <Shield className="w-5 h-5" />
-              Explore Protocols
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-            <Link
-              to="/looking-glass"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white/5 border border-white/10 text-white font-medium hover:bg-white/10 transition-colors"
-            >
-              <Eye className="w-5 h-5" />
-              Looking Glass
-            </Link>
-          </div>
-        </motion.div>
+      {/* Value Props */}
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <ValueCard
+          icon={Code}
+          title="Real Protocol Execution"
+          description="Not simulations — actual HTTP requests to a working identity provider"
+        />
+        <ValueCard
+          icon={FileSearch}
+          title="Full Traffic Inspection"
+          description="See every request, response, header, and parameter exchanged"
+        />
+        <ValueCard
+          icon={Zap}
+          title="Live Token Decoding"
+          description="Decode JWTs instantly as they're issued, examine claims and signatures"
+        />
       </section>
 
-      {/* Protocol Cards */}
+      {/* Main Navigation */}
       <section>
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="font-display text-2xl font-bold text-white">Protocols</h2>
-            <p className="text-surface-400 mt-1">Choose a protocol to explore its flows</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {protocolCards.map((protocol, idx) => (
-            <motion.div
-              key={protocol.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.1 }}
-            >
-              <Link
-                to={`/protocol/${protocol.id}`}
-                className={`block relative overflow-hidden rounded-2xl p-6 bg-surface-900/50 border border-white/5 hover:border-white/10 transition-all group hover:shadow-xl ${protocol.shadowColor}`}
-              >
-                {/* Gradient accent */}
-                <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${protocol.color}`} />
-
-                <div className="flex items-start gap-4">
-                  <div className={`w-16 h-16 rounded-xl bg-gradient-to-br ${protocol.color} flex items-center justify-center shadow-lg ${protocol.shadowColor}`}>
-                    <protocol.icon className="w-8 h-8 text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-display text-xl font-semibold text-white">
-                        {protocol.name}
-                      </h3>
-                      <span className="px-2 py-0.5 rounded-full bg-white/10 text-xs text-surface-400">
-                        {protocol.flowCount} flows
-                      </span>
-                    </div>
-                    <p className="text-surface-400 text-sm line-clamp-2">
-                      {protocol.description}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Features */}
-                <div className="flex flex-wrap gap-2 mt-4">
-                  {protocol.features.map(feature => (
-                    <span 
-                      key={feature}
-                      className="px-2.5 py-1 rounded-lg bg-white/5 text-xs text-surface-400"
-                    >
-                      {feature}
-                    </span>
-                  ))}
-                </div>
-
-                {/* Action */}
-                <div className="flex items-center gap-1 mt-4 text-sm text-surface-500 group-hover:text-accent-orange transition-colors">
-                  <span>Explore flows</span>
-                  <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                </div>
-              </Link>
-            </motion.div>
-          ))}
-        </div>
-      </section>
-
-      {/* Features Grid */}
-      <section>
-        <h2 className="font-display text-2xl font-bold text-white mb-6">What You'll Learn</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <FeatureCard
+        <h2 className="text-sm font-medium text-surface-400 uppercase tracking-wider mb-4">
+          Get Started
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <NavCard
+            to="/looking-glass"
             icon={Eye}
-            title="Interactive Diagrams"
-            description="Sequence diagrams that show each step of the authentication flow. Click any step to see detailed information."
             color="cyan"
+            title="Looking Glass"
+            description="The main workspace. Select a protocol flow, execute it, and inspect every step of the exchange in real-time."
+            cta="Open Looking Glass"
           />
-          <FeatureCard
-            icon={Lock}
-            title="Security Deep Dive"
-            description="Understand security considerations at each step. Learn about PKCE, state parameters, and token validation."
+          <NavCard
+            to="/protocol/oauth2"
+            icon={Shield}
             color="purple"
+            title="Protocol Reference"
+            description="Documentation for each flow with sequence diagrams, parameter explanations, and security considerations."
+            cta="Browse Protocols"
           />
-          <FeatureCard
+        </div>
+      </section>
+
+      {/* Available Protocols */}
+      <section>
+        <h2 className="text-sm font-medium text-surface-400 uppercase tracking-wider mb-4">
+          Supported Protocols
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <ProtocolCard
             icon={Key}
-            title="Token Inspector"
-            description="Decode and analyze JWTs. See claims, validate signatures, and understand token structure."
+            name="OAuth 2.0"
+            description="Authorization framework for delegated access"
+            color="blue"
+            flows={['authorization_code', 'client_credentials', 'pkce', 'refresh_token']}
+            to="/looking-glass"
+          />
+          <ProtocolCard
+            icon={Fingerprint}
+            name="OpenID Connect"
+            description="Authentication layer built on OAuth 2.0"
             color="orange"
+            flows={['oidc_code', 'hybrid', 'userinfo', 'discovery']}
+            to="/looking-glass"
           />
         </div>
       </section>
 
-      {/* Quick Start */}
-      <section className="glass rounded-2xl p-8">
-        <h2 className="font-display text-2xl font-bold text-white mb-6">Quick Start</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <StepCard
-            number={1}
-            title="Choose a Protocol"
-            description="Select OAuth 2.0 or OpenID Connect to see available authentication flows."
-          />
-          <StepCard
-            number={2}
-            title="Explore a Flow"
-            description="View the sequence diagram and step-by-step breakdown of the selected flow."
-          />
-          <StepCard
-            number={3}
-            title="Try Live Demo"
-            description="Click 'Try Live Demo' to walk through a real authentication flow."
-          />
+      {/* Coming Soon */}
+      <section className="rounded-xl border border-dashed border-white/10 p-6 text-center">
+        <p className="text-surface-400 mb-2">More protocols on the roadmap</p>
+        <div className="flex items-center justify-center gap-4 text-surface-500 text-sm">
+          <span>SAML 2.0</span>
+          <span className="text-surface-700">•</span>
+          <span>WebAuthn</span>
+          <span className="text-surface-700">•</span>
+          <span>FIDO2</span>
+          <span className="text-surface-700">•</span>
+          <span>mTLS</span>
         </div>
       </section>
 
-      {/* Demo Credentials */}
-      <section className="glass rounded-2xl p-8">
-        <div className="flex items-center gap-3 mb-6">
-          <Users className="w-6 h-6 text-accent-green" />
-          <h2 className="font-display text-xl font-bold text-white">Demo Credentials</h2>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <CredentialCard
-            name="Alice"
-            email="alice@example.com"
-            password="password123"
-            role="Standard User"
-          />
-          <CredentialCard
-            name="Bob"
-            email="bob@example.com"
-            password="password123"
-            role="Standard User"
-          />
-          <CredentialCard
-            name="Admin"
-            email="admin@example.com"
-            password="admin123"
-            role="Administrator"
-            highlight
-          />
+      {/* Quick References */}
+      <section>
+        <h2 className="text-sm font-medium text-surface-400 uppercase tracking-wider mb-3">
+          Specifications
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <RFCLink number="6749" title="OAuth 2.0" />
+          <RFCLink number="7636" title="PKCE" />
+          <RFCLink number="6750" title="Bearer Token" />
+          <RFCLink number="7519" title="JWT" />
         </div>
       </section>
     </div>
   )
 }
 
-function FeatureCard({ icon: Icon, title, description, color }: {
+function ValueCard({ 
+  icon: Icon, 
+  title, 
+  description 
+}: {
   icon: React.ElementType
   title: string
   description: string
-  color: string
 }) {
-  const colorClasses: Record<string, string> = {
-    cyan: 'from-cyan-500 to-blue-600 shadow-cyan-500/25',
-    purple: 'from-purple-500 to-indigo-600 shadow-purple-500/25',
-    orange: 'from-orange-500 to-red-600 shadow-orange-500/25',
-  }
-
   return (
-    <div className="glass rounded-xl p-6 hover:bg-white/5 transition-colors">
-      <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${colorClasses[color]} flex items-center justify-center mb-4 shadow-lg`}>
-        <Icon className="w-6 h-6 text-white" />
-      </div>
-      <h3 className="font-display text-lg font-semibold text-white mb-2">{title}</h3>
-      <p className="text-surface-400 text-sm">{description}</p>
+    <div className="p-4 rounded-xl bg-surface-900/50 border border-white/5">
+      <Icon className="w-5 h-5 text-amber-400 mb-3" />
+      <h3 className="font-medium text-white mb-1">{title}</h3>
+      <p className="text-sm text-surface-400">{description}</p>
     </div>
   )
 }
 
-function StepCard({ number, title, description }: {
-  number: number
+function NavCard({ 
+  to, 
+  icon: Icon, 
+  color, 
+  title, 
+  description, 
+  cta 
+}: {
+  to: string
+  icon: React.ElementType
+  color: 'cyan' | 'purple'
   title: string
   description: string
+  cta: string
 }) {
+  const colors = {
+    cyan: {
+      border: 'border-cyan-500/20 hover:border-cyan-500/40',
+      bg: 'from-cyan-500/10',
+      icon: 'bg-cyan-500/20',
+      iconText: 'text-cyan-400',
+      cta: 'text-cyan-400',
+    },
+    purple: {
+      border: 'border-purple-500/20 hover:border-purple-500/40',
+      bg: 'from-purple-500/10',
+      icon: 'bg-purple-500/20',
+      iconText: 'text-purple-400',
+      cta: 'text-purple-400',
+    },
+  }
+  const c = colors[color]
+
   return (
-    <div className="flex gap-4">
-      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-accent-orange to-accent-purple flex items-center justify-center flex-shrink-0">
-        <span className="font-bold text-white">{number}</span>
+    <Link
+      to={to}
+      className={`group relative overflow-hidden rounded-xl border ${c.border} bg-gradient-to-br ${c.bg} to-transparent p-6 transition-all`}
+    >
+      <div className={`absolute top-0 right-0 w-32 h-32 ${c.bg.replace('from-', 'bg-')} rounded-full blur-2xl -translate-y-1/2 translate-x-1/2 opacity-50`} />
+      <div className="relative">
+        <div className={`w-12 h-12 rounded-xl ${c.icon} flex items-center justify-center mb-4`}>
+          <Icon className={`w-6 h-6 ${c.iconText}`} />
+        </div>
+        <h3 className="text-xl font-semibold text-white mb-2">{title}</h3>
+        <p className="text-surface-400 mb-4 leading-relaxed">{description}</p>
+        <span className={`inline-flex items-center gap-1.5 ${c.cta} text-sm font-medium group-hover:gap-2.5 transition-all`}>
+          {cta} <ChevronRight className="w-4 h-4" />
+        </span>
       </div>
-      <div>
-        <h3 className="font-semibold text-white mb-1">{title}</h3>
-        <p className="text-surface-400 text-sm">{description}</p>
-      </div>
-    </div>
+    </Link>
   )
 }
 
-function CredentialCard({ name, email, password, role, highlight }: {
+function ProtocolCard({ 
+  icon: Icon, 
+  name, 
+  description, 
+  color,
+  flows, 
+  to 
+}: {
+  icon: React.ElementType
   name: string
-  email: string
-  password: string
-  role: string
-  highlight?: boolean
+  description: string
+  color: 'blue' | 'orange'
+  flows: string[]
+  to: string
 }) {
+  const colors = {
+    blue: {
+      border: 'border-blue-500/20 hover:border-blue-500/40',
+      bg: 'bg-blue-500/10',
+      text: 'text-blue-400',
+      tag: 'bg-blue-500/10 text-blue-300',
+    },
+    orange: {
+      border: 'border-orange-500/20 hover:border-orange-500/40',
+      bg: 'bg-orange-500/10',
+      text: 'text-orange-400',
+      tag: 'bg-orange-500/10 text-orange-300',
+    },
+  }
+  const c = colors[color]
+
   return (
-    <div className={`p-4 rounded-xl ${highlight ? 'bg-accent-orange/10 border border-accent-orange/20' : 'bg-surface-900/50'}`}>
-      <div className="flex items-center justify-between mb-3">
-        <span className="font-medium text-white">{name}</span>
-        <span className={`text-xs px-2 py-0.5 rounded-full ${highlight ? 'bg-accent-orange/20 text-accent-orange' : 'bg-white/10 text-surface-400'}`}>
-          {role}
-        </span>
-      </div>
-      <div className="space-y-1 text-sm">
-        <div className="flex justify-between">
-          <span className="text-surface-500">Email:</span>
-          <span className="text-surface-300 font-mono">{email}</span>
+    <Link to={to} className={`block rounded-xl border ${c.border} p-5 transition-colors group`}>
+      <div className="flex items-start gap-4">
+        <div className={`w-10 h-10 rounded-lg ${c.bg} flex items-center justify-center flex-shrink-0`}>
+          <Icon className={`w-5 h-5 ${c.text}`} />
         </div>
-        <div className="flex justify-between">
-          <span className="text-surface-500">Password:</span>
-          <span className="text-surface-300 font-mono">{password}</span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="font-semibold text-white">{name}</span>
+            <ChevronRight className="w-4 h-4 text-surface-600 group-hover:text-surface-400 transition-colors" />
+          </div>
+          <p className="text-sm text-surface-500 mb-3">{description}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {flows.map(flow => (
+              <code key={flow} className={`px-2 py-0.5 rounded text-xs font-mono ${c.tag}`}>
+                {flow}
+              </code>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+    </Link>
+  )
+}
+
+function RFCLink({ number, title }: { number: string; title: string }) {
+  return (
+    <a
+      href={`https://datatracker.ietf.org/doc/html/rfc${number}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-white/5 hover:border-white/20 hover:bg-white/5 transition-all text-sm group"
+    >
+      <span className="text-surface-500 font-mono group-hover:text-amber-400 transition-colors">RFC {number}</span>
+      <span className="text-surface-400 group-hover:text-white transition-colors">{title}</span>
+      <ExternalLink className="w-3 h-3 text-surface-600 opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
+    </a>
   )
 }

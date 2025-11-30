@@ -1,7 +1,6 @@
 import { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { Shield, Eye, Home, Github, ExternalLink } from 'lucide-react'
+import { Eye, Home, Github, ExternalLink } from 'lucide-react'
 
 interface LayoutProps {
   children: ReactNode
@@ -11,19 +10,14 @@ export function Layout({ children }: LayoutProps) {
   const location = useLocation()
 
   const navItems = [
-    { path: '/', icon: Home, label: 'Dashboard' },
+    { path: '/', icon: Home, label: 'Home' },
     { path: '/looking-glass', icon: Eye, label: 'Looking Glass' },
   ]
 
   return (
     <div className="min-h-screen bg-surface-950">
-      {/* Background pattern */}
+      {/* Subtle grid background */}
       <div className="fixed inset-0 opacity-30 pointer-events-none">
-        <div className="absolute inset-0" style={{
-          backgroundImage: `radial-gradient(circle at 25% 25%, rgba(249, 115, 22, 0.03) 0%, transparent 50%),
-                           radial-gradient(circle at 75% 75%, rgba(168, 85, 247, 0.03) 0%, transparent 50%),
-                           radial-gradient(circle at 50% 50%, rgba(6, 182, 212, 0.02) 0%, transparent 70%)`
-        }} />
         <svg className="absolute inset-0 w-full h-full">
           <defs>
             <pattern id="grid" width="60" height="60" patternUnits="userSpaceOnUse">
@@ -35,20 +29,12 @@ export function Layout({ children }: LayoutProps) {
       </div>
 
       {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 glass">
-        <div className="max-w-7xl mx-auto px-6 py-4">
+      <header className="fixed top-0 left-0 right-0 z-50 bg-surface-950/80 backdrop-blur-sm border-b border-white/5">
+        <div className="max-w-5xl mx-auto px-6 py-3">
           <div className="flex items-center justify-between">
-            <Link to="/" className="flex items-center gap-3 group">
-              <motion.div
-                whileHover={{ rotate: 15 }}
-                className="p-2 rounded-xl bg-gradient-to-br from-accent-orange to-accent-purple"
-              >
-                <Shield className="w-6 h-6 text-white" />
-              </motion.div>
-              <div>
-                <h1 className="font-display font-bold text-lg text-white">Protocol Showcase</h1>
-                <p className="text-xs text-surface-400">Security Engineering Portfolio</p>
-              </div>
+            <Link to="/" className="flex items-center gap-2.5 group">
+              <span className="text-xl">🍜</span>
+              <span className="font-semibold text-white group-hover:text-amber-100 transition-colors">Protocol Soup</span>
             </Link>
 
             <nav className="flex items-center gap-1">
@@ -59,25 +45,26 @@ export function Layout({ children }: LayoutProps) {
                   <Link
                     key={item.path}
                     to={item.path}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors text-sm ${
                       isActive
                         ? 'bg-white/10 text-white'
                         : 'text-surface-400 hover:text-white hover:bg-white/5'
                     }`}
                   >
                     <item.icon className="w-4 h-4" />
-                    <span className="text-sm font-medium">{item.label}</span>
+                    <span>{item.label}</span>
                   </Link>
                 )
               })}
+              <div className="w-px h-4 bg-white/10 mx-2" />
               <a
                 href="https://github.com"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 px-4 py-2 rounded-lg text-surface-400 hover:text-white hover:bg-white/5 transition-all ml-2"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-surface-500 hover:text-white hover:bg-white/5 transition-colors text-sm"
               >
                 <Github className="w-4 h-4" />
-                <span className="text-sm font-medium">Source</span>
+                <span>Source</span>
                 <ExternalLink className="w-3 h-3" />
               </a>
             </nav>
@@ -86,22 +73,21 @@ export function Layout({ children }: LayoutProps) {
       </header>
 
       {/* Main content */}
-      <main className="relative pt-24 pb-12 min-h-screen">
-        <div className="max-w-7xl mx-auto px-6">
+      <main className="relative pt-20 pb-12 min-h-screen">
+        <div className="max-w-5xl mx-auto px-6">
           {children}
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="relative border-t border-white/5 py-8">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="flex items-center justify-between text-sm text-surface-500">
-            <p>Built to demonstrate security engineering expertise</p>
-            <p>OAuth 2.0 • OpenID Connect • PKCE • JWT</p>
+      <footer className="relative border-t border-white/5 py-6">
+        <div className="max-w-5xl mx-auto px-6">
+          <div className="flex items-center justify-between text-xs text-surface-600">
+            <p>Protocol Soup — explore authentication protocols</p>
+            <p className="font-mono">OAuth 2.0 · OIDC · more soon</p>
           </div>
         </div>
       </footer>
     </div>
   )
 }
-

@@ -1,71 +1,35 @@
 /**
- * Looking Glass Page
- * 
- * Protocol-agnostic inspection interface for authentication flows.
- * Supports both simulation mode (animated walkthrough) and live execution
- * mode (real RFC-compliant protocol flows against the MockIdP).
+ * Looking Glass - Protocol Execution & Inspection
  */
 
 import React, { useState, useCallback, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
+import { motion, AnimatePresence } from 'framer-motion'
 import { 
-  Eye, Clock, Play, RotateCcw, Zap, Key, 
-  Wifi, WifiOff, Info, Shield, AlertTriangle,
-  Sparkles, Radio, Book,
+  Eye, Play, RotateCcw, Key, Terminal, Square,
+  ChevronRight, Fingerprint, Shield, Lock, Sparkles
 } from 'lucide-react'
 
-// Import modular Looking Glass system
 import {
   useProtocols,
-  useFlowSimulation,
-  useLookingGlassSession,
   useRealFlowExecutor,
-  FlowVisualizer,
-  StepDetail,
   ProtocolSelector,
-  ProtocolFlowBadge,
   RealFlowPanel,
-  getActorsForFlow,
   type LookingGlassProtocol,
   type LookingGlassFlow,
-  type LookingGlassStep,
-  type LookingGlassEvent,
 } from '../lookingglass'
 
 import { TokenInspector } from '../components/lookingglass/TokenInspector'
-import { Timeline, type TimelineEvent } from '../components/lookingglass/Timeline'
-
-type ExecutionMode = 'simulation' | 'live'
 
 export function LookingGlass() {
-  // URL params for direct session access
-  const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>()
+  useParams<{ sessionId?: string }>()
 
-  // Execution mode toggle
-  const [mode, setMode] = useState<ExecutionMode>('live')
-
-  // Protocol and flow selection state
   const [selectedProtocol, setSelectedProtocol] = useState<LookingGlassProtocol | null>(null)
   const [selectedFlow, setSelectedFlow] = useState<LookingGlassFlow | null>(null)
-  const [selectedStep, setSelectedStep] = useState<LookingGlassStep | null>(null)
-  const [selectedStepIndex, setSelectedStepIndex] = useState<number>(-1)
+  const [inspectedToken, setInspectedToken] = useState('')
 
-  // Token inspector state
-  const [pastedToken, setPastedToken] = useState('')
-
-  // Load all protocols
   const { protocols, loading: protocolsLoading } = useProtocols()
 
-  // Get actors for selected flow
-  const actors = selectedFlow ? getActorsForFlow(selectedFlow) : []
-
-  // Flow simulation (for animation mode)
-  const simulation = useFlowSimulation(selectedFlow)
-
-  // Live session (if sessionId provided in URL)
-  const session = useLookingGlassSession(urlSessionId || null)
-
-  // Memoize scopes to prevent unnecessary re-renders
   const scopes = useMemo(() => 
     selectedProtocol?.id === 'oidc' 
       ? ['openid', 'profile', 'email'] 
@@ -73,27 +37,14 @@ export function LookingGlass() {
     [selectedProtocol?.id]
   )
 
-  // Determine client credentials based on flow type
-  // - Client Credentials flow needs a confidential client (machine-client + machine-secret)
-  // - Other flows use public-app (public client with PKCE)
   const clientConfig = useMemo(() => {
     const flowId = selectedFlow?.id?.toLowerCase().replace(/_/g, '-')
-    
     if (flowId === 'client-credentials') {
-      return {
-        clientId: 'machine-client',
-        clientSecret: 'machine-secret',
-      }
+      return { clientId: 'machine-client', clientSecret: 'machine-secret' }
     }
-    
-    // Public client for browser-based flows (auth code, implicit, etc.)
-    return {
-      clientId: 'public-app',
-      clientSecret: undefined,
-    }
+    return { clientId: 'public-app', clientSecret: undefined }
   }, [selectedFlow?.id])
 
-  // NEW: Real flow executor - uses flow-specific RFC-compliant executors
   const realExecutor = useRealFlowExecutor({
     protocolId: selectedProtocol?.id || null,
     flowId: selectedFlow?.id || null,
@@ -103,169 +54,114 @@ export function LookingGlass() {
     scopes,
   })
 
-  // Handle protocol selection
   const handleProtocolSelect = useCallback((protocol: LookingGlassProtocol) => {
     setSelectedProtocol(protocol)
     setSelectedFlow(null)
-    setSelectedStep(null)
-    setSelectedStepIndex(-1)
-    simulation.resetSimulation()
     realExecutor.reset()
-  }, [simulation, realExecutor])
+    setInspectedToken('')
+  }, [realExecutor])
 
-  // Handle flow selection
   const handleFlowSelect = useCallback((flow: LookingGlassFlow) => {
     setSelectedFlow(flow)
-    setSelectedStep(null)
-    setSelectedStepIndex(-1)
-    simulation.resetSimulation()
     realExecutor.reset()
-  }, [simulation, realExecutor])
+    setInspectedToken('')
+  }, [realExecutor])
 
-  // Handle step click
-  const handleStepClick = useCallback((step: LookingGlassStep, index: number) => {
-    setSelectedStep(step)
-    setSelectedStepIndex(index)
-  }, [])
-
-  // Start simulation
-  const handleStartSimulation = useCallback(() => {
-    if (selectedFlow) {
-      setSelectedStep(null)
-      setSelectedStepIndex(-1)
-      simulation.startSimulation(1200)
-    }
-  }, [selectedFlow, simulation])
-
-  // Reset everything
   const handleReset = useCallback(() => {
-    simulation.resetSimulation()
-    session.clearEvents()
     realExecutor.reset()
-    setSelectedStep(null)
-    setSelectedStepIndex(-1)
-  }, [simulation, session, realExecutor])
+    setInspectedToken('')
+  }, [realExecutor])
 
-  // Convert simulation events to timeline events
-  const timelineEvents: TimelineEvent[] = (urlSessionId ? session.events : simulation.events).map((event: LookingGlassEvent) => ({
-    id: event.id,
-    type: event.type,
-    timestamp: event.timestamp,
-    status: event.status === 'error' ? 'error' : event.status === 'warning' ? 'warning' : event.status === 'pending' ? 'pending' : 'success',
-    title: event.title,
-    description: event.description,
-    duration: event.duration,
-    data: event.data,
-  }))
+  const handleQuickSelect = useCallback((protocolId: string, flowId: string) => {
+    const protocol = protocols.find(p => p.id === protocolId)
+    if (protocol) {
+      setSelectedProtocol(protocol)
+      const flow = protocol.flows.find(f => f.id === flowId)
+      if (flow) {
+        setSelectedFlow(flow)
+        realExecutor.reset()
+        setInspectedToken('')
+      }
+    }
+  }, [protocols, realExecutor])
 
-  // Determine connection status
-  const isLive = urlSessionId ? session.connected : false
-  const hasEvents = timelineEvents.length > 0
+  const hasCapturedTokens = realExecutor.state?.decodedTokens && realExecutor.state.decodedTokens.length > 0
+  const status = realExecutor.state?.status || 'idle'
 
   return (
-    <div className="space-y-8">
+    <div className="max-w-5xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-4">
+      <header className="py-2">
+        <div className="flex items-center justify-between">
           <div>
-            <h1 className="font-display text-2xl font-bold text-white flex items-center gap-3">
-              <Eye className="w-7 h-7 text-accent-cyan" />
+            <h1 className="text-2xl font-semibold text-white flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-purple-500/20 flex items-center justify-center">
+                <Eye className="w-5 h-5 text-cyan-400" />
+              </div>
               Looking Glass
             </h1>
-            <p className="text-surface-400 mt-1">
-              Deep inspection of authentication flows
+            <p className="text-surface-400 mt-1 ml-[52px]">
+              Execute protocol flows and inspect the traffic
             </p>
           </div>
-          {selectedProtocol && (
-            <ProtocolFlowBadge protocol={selectedProtocol} flow={selectedFlow} />
+          
+          {status !== 'idle' && (
+            <StatusBadge status={status} />
+          )}
+        </div>
+      </header>
+
+      {/* Quick Select - when nothing selected */}
+      {!selectedFlow && !protocolsLoading && (
+        <section>
+          <div className="flex items-center gap-2 text-surface-500 text-sm mb-3">
+            <Sparkles className="w-4 h-4 text-amber-400" />
+            <span>Quick start — select a flow to begin</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <FlowButton
+              icon={Shield}
+              label="Authorization Code"
+              sublabel="OAuth 2.0"
+              color="blue"
+              onClick={() => handleQuickSelect('oauth2', 'authorization_code')}
+            />
+            <FlowButton
+              icon={Lock}
+              label="Client Credentials"
+              sublabel="OAuth 2.0"
+              color="green"
+              onClick={() => handleQuickSelect('oauth2', 'client_credentials')}
+            />
+            <FlowButton
+              icon={Fingerprint}
+              label="OIDC Auth Code"
+              sublabel="OpenID Connect"
+              color="orange"
+              onClick={() => handleQuickSelect('oidc', 'oidc_authorization_code')}
+            />
+          </div>
+        </section>
+      )}
+
+      {/* Protocol Selector */}
+      <section className="rounded-xl border border-white/10 bg-surface-900/30 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Terminal className="w-4 h-4 text-surface-500" />
+            <span className="text-sm font-medium text-surface-300">Configuration</span>
+          </div>
+          {selectedFlow && (
+            <button
+              onClick={handleReset}
+              className="flex items-center gap-1.5 text-sm text-surface-500 hover:text-white transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Reset
+            </button>
           )}
         </div>
         
-        <div className="flex items-center gap-3">
-          {/* Mode Toggle */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-800 border border-white/10">
-            <button
-              onClick={() => setMode('simulation')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                mode === 'simulation'
-                  ? 'bg-purple-500/20 text-purple-400'
-                  : 'text-surface-400 hover:text-white'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              Simulation
-            </button>
-            <button
-              onClick={() => setMode('live')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                mode === 'live'
-                  ? 'bg-green-500/20 text-green-400'
-                  : 'text-surface-400 hover:text-white'
-              }`}
-            >
-              <Radio className="w-3.5 h-3.5" />
-              Real Protocol
-            </button>
-          </div>
-
-          {/* Live status indicator */}
-          {urlSessionId && (
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium ${
-              isLive 
-                ? 'bg-green-500/10 border border-green-500/20 text-green-400' 
-                : 'bg-red-500/10 border border-red-500/20 text-red-400'
-            }`}>
-              {isLive ? (
-                <>
-                  <Wifi className="w-3.5 h-3.5" />
-                  <span>Live</span>
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                </>
-              ) : (
-                <>
-                  <WifiOff className="w-3.5 h-3.5" />
-                  <span>Disconnected</span>
-                </>
-              )}
-            </div>
-          )}
-
-          <button
-            onClick={handleReset}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-surface-400 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <RotateCcw className="w-4 h-4" />
-            Reset
-          </button>
-          
-          {mode === 'simulation' && (
-            <button
-              onClick={handleStartSimulation}
-              disabled={!selectedFlow || simulation.isSimulating}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {simulation.isSimulating ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Simulating...
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4" />
-                  Run Simulation
-                </>
-              )}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Protocol & Flow Selector - needs high z-index for dropdowns */}
-      <div className="glass rounded-xl p-6 relative z-30">
-        <h2 className="font-display font-semibold text-white mb-4 flex items-center gap-2">
-          <Shield className="w-5 h-5 text-accent-purple" />
-          Select Protocol & Flow
-        </h2>
         <ProtocolSelector
           protocols={protocols}
           selectedProtocol={selectedProtocol}
@@ -274,205 +170,243 @@ export function LookingGlass() {
           onFlowSelect={handleFlowSelect}
           loading={protocolsLoading}
         />
-        
-        {/* Show RFC reference for selected flow */}
-        {mode === 'live' && realExecutor.flowInfo && (
-          <div className="mt-4 p-3 rounded-lg bg-indigo-500/5 border border-indigo-500/20">
-            <div className="flex items-center gap-2 text-sm">
-              <Book className="w-4 h-4 text-indigo-400" />
-              <span className="text-indigo-400 font-mono">{realExecutor.flowInfo.rfcReference}</span>
-              <span className="text-surface-400">—</span>
-              <span className="text-surface-300">{realExecutor.flowInfo.description}</span>
+      </section>
+
+      {/* Execution */}
+      {selectedFlow && (
+        <motion.section
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-xl border border-white/10 bg-surface-900/30 overflow-hidden"
+        >
+          {/* Flow Header */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center">
+                <Play className="w-4 h-4 text-cyan-400" />
+              </div>
+              <div>
+                <code className="text-white font-medium">{selectedFlow.id}</code>
+                {realExecutor.flowInfo && (
+                  <span className="ml-2 text-xs text-surface-500 font-mono">
+                    {realExecutor.flowInfo.rfcReference}
+                  </span>
+                )}
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {status === 'idle' && (
+                <button
+                  onClick={realExecutor.execute}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-500/30 text-green-400 text-sm font-medium hover:from-green-500/30 hover:to-emerald-500/30 transition-all"
+                >
+                  <Play className="w-4 h-4" />
+                  Execute
+                </button>
+              )}
+              {(status === 'executing' || status === 'awaiting_user') && (
+                <button
+                  onClick={realExecutor.abort}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm hover:bg-red-500/20 transition-colors"
+                >
+                  <Square className="w-4 h-4" />
+                  Abort
+                </button>
+              )}
+              {status === 'completed' && (
+                <button
+                  onClick={realExecutor.reset}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-800 border border-white/10 text-surface-400 text-sm hover:text-white transition-colors"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Run Again
+                </button>
+              )}
             </div>
           </div>
-        )}
-      </div>
 
-      {/* Real Protocol Execution Panel - Only shown in live mode when flow is selected */}
-      {mode === 'live' && selectedFlow && (
-        <div className="glass rounded-xl p-6 relative z-10">
-          <h2 className="font-display font-semibold text-white mb-4 flex items-center gap-2">
-            <Radio className="w-5 h-5 text-green-400" />
-            Real Protocol Execution
-            <span className="ml-2 px-2 py-0.5 rounded text-xs bg-green-500/10 text-green-400 border border-green-500/20">
-              RFC Compliant
-            </span>
-          </h2>
-          <p className="text-surface-400 text-sm mb-4">
-            Execute the <strong>{selectedFlow.name}</strong> flow with real HTTP requests per {realExecutor.flowInfo?.rfcReference || 'RFC specifications'}.
-          </p>
-          <RealFlowPanel
-            state={realExecutor.state}
-            onExecute={realExecutor.execute}
-            onAbort={realExecutor.abort}
-            onReset={realExecutor.reset}
-            isExecuting={realExecutor.isExecuting}
-            flowInfo={realExecutor.flowInfo}
-            requirements={realExecutor.requirements}
-            error={realExecutor.error}
-          />
-        </div>
-      )}
-
-      {/* Flow Visualization - Only shown in simulation mode */}
-      {mode === 'simulation' && selectedFlow && (
-        <div className="glass rounded-xl p-6 relative z-10">
-          <h2 className="font-display font-semibold text-white mb-4 flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-purple-400" />
-            Flow Visualization
-            <span className="ml-2 px-2 py-0.5 rounded text-xs bg-purple-500/10 text-purple-400 border border-purple-500/20">
-              Simulation
-            </span>
-          </h2>
-          <FlowVisualizer
-            flow={selectedFlow}
-            actors={actors}
-            currentStepIndex={simulation.currentStepIndex}
-            completedSteps={simulation.completedSteps}
-            onStepClick={handleStepClick}
-            selectedStepIndex={selectedStepIndex}
-            isAnimating={simulation.isSimulating}
-          />
-        </div>
-      )}
-
-      {/* Main Content Grid - Shown in simulation mode */}
-      {mode === 'simulation' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative z-10">
-          {/* Step Detail Panel */}
-          <div className="glass rounded-xl p-6">
-            <h2 className="font-display font-semibold text-white mb-4 flex items-center gap-2">
-              <Info className="w-5 h-5 text-accent-purple" />
-              Step Details
-            </h2>
-            <StepDetail
-              step={selectedStep}
-              stepNumber={selectedStepIndex >= 0 ? selectedStepIndex + 1 : undefined}
+          {/* Execution Panel */}
+          <div className="p-5">
+            <RealFlowPanel
+              state={realExecutor.state}
+              onExecute={realExecutor.execute}
+              onAbort={realExecutor.abort}
+              onReset={realExecutor.reset}
+              isExecuting={realExecutor.isExecuting}
+              flowInfo={realExecutor.flowInfo}
+              requirements={realExecutor.requirements}
+              error={realExecutor.error}
             />
           </div>
-
-          {/* Event Timeline */}
-          <div className="glass rounded-xl p-6">
-            <h2 className="font-display font-semibold text-white mb-4 flex items-center gap-2">
-              <Clock className="w-5 h-5 text-accent-orange" />
-              Event Timeline
-            </h2>
-
-            {!hasEvents ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <div className="w-16 h-16 rounded-full bg-surface-800 flex items-center justify-center mb-4">
-                  <Zap className="w-8 h-8 text-surface-600" />
-                </div>
-                <p className="text-surface-400">No events yet</p>
-                <p className="text-surface-500 text-sm mt-1">
-                  {selectedFlow 
-                    ? 'Run a simulation to see events'
-                    : 'Select a protocol and flow to begin'
-                  }
-                </p>
-              </div>
-            ) : (
-              <Timeline
-                events={timelineEvents}
-                onEventClick={(event) => {
-                  // Find matching step if event has step data
-                  if (selectedFlow && event.data?.step !== undefined) {
-                    const stepIndex = Number(event.data.step)
-                    if (stepIndex >= 0 && stepIndex < selectedFlow.steps.length) {
-                      setSelectedStep(selectedFlow.steps[stepIndex])
-                      setSelectedStepIndex(stepIndex)
-                    }
-                  }
-                }}
-                selectedEventId={undefined}
-                isLive={isLive}
-                maxEvents={50}
-              />
-            )}
-          </div>
-        </div>
+        </motion.section>
       )}
 
       {/* Token Inspector */}
-      <div className="glass rounded-xl p-6">
-        <h2 className="font-display font-semibold text-white mb-4 flex items-center gap-2">
-          <Key className="w-5 h-5 text-accent-green" />
-          Token Inspector
-        </h2>
-        <p className="text-surface-400 text-sm mb-4">
-          Paste any JWT token to decode it and see the header, payload, and signature validation status.
-          {mode === 'live' && realExecutor.state?.tokens.accessToken && (
+      <AnimatePresence>
+        {(hasCapturedTokens || inspectedToken) && (
+          <motion.section
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="rounded-xl border border-white/10 bg-surface-900/30 overflow-hidden"
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                  <Key className="w-4 h-4 text-amber-400" />
+                </div>
+                <span className="font-medium text-white">Token Inspector</span>
+              </div>
+              
+              {hasCapturedTokens && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-surface-500">Captured:</span>
+                  {realExecutor.state?.tokens.accessToken && (
+                    <TokenButton
+                      label="access_token"
+                      color="green"
+                      active={inspectedToken === realExecutor.state?.tokens.accessToken}
+                      onClick={() => setInspectedToken(realExecutor.state?.tokens.accessToken || '')}
+                    />
+                  )}
+                  {realExecutor.state?.tokens.idToken && (
+                    <TokenButton
+                      label="id_token"
+                      color="orange"
+                      active={inspectedToken === realExecutor.state?.tokens.idToken}
+                      onClick={() => setInspectedToken(realExecutor.state?.tokens.idToken || '')}
+                    />
+                  )}
+                  {realExecutor.state?.tokens.refreshToken && (
+                    <TokenButton
+                      label="refresh_token"
+                      color="blue"
+                      active={inspectedToken === realExecutor.state?.tokens.refreshToken}
+                      onClick={() => setInspectedToken(realExecutor.state?.tokens.refreshToken || '')}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="p-5">
+              {inspectedToken ? (
+                <TokenInspector token={inspectedToken} />
+              ) : (
+                <div className="text-center py-6 text-surface-500 text-sm">
+                  Select a token above to decode
+                </div>
+              )}
+            </div>
+          </motion.section>
+        )}
+      </AnimatePresence>
+
+      {/* Manual JWT Input */}
+      <section className="rounded-xl border border-white/10 bg-surface-900/30 p-5">
+        <div className="flex items-center gap-2 mb-3">
+          <Sparkles className="w-4 h-4 text-purple-400" />
+          <span className="text-sm font-medium text-surface-300">Decode any JWT</span>
+        </div>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={inspectedToken}
+            onChange={(e) => setInspectedToken(e.target.value)}
+            placeholder="Paste a token here..."
+            className="flex-1 px-4 py-2.5 rounded-lg bg-surface-900 border border-white/10 text-sm font-mono text-white placeholder-surface-600 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all"
+          />
+          {inspectedToken && (
             <button
-              onClick={() => setPastedToken(realExecutor.state?.tokens.accessToken || '')}
-              className="ml-2 text-accent-cyan hover:underline"
+              onClick={() => setInspectedToken('')}
+              className="px-4 py-2.5 rounded-lg bg-surface-800 text-surface-400 hover:text-white text-sm transition-colors"
             >
-              Use captured access token →
+              Clear
             </button>
           )}
-        </p>
-        <textarea
-          value={pastedToken}
-          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPastedToken(e.target.value)}
-          placeholder="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
-          className="w-full h-28 px-4 py-3 rounded-lg bg-surface-900 border border-white/10 text-sm font-mono text-white placeholder-surface-600 focus:outline-none focus:border-accent-cyan/50 resize-none mb-4"
-        />
-        {pastedToken && <TokenInspector token={pastedToken} />}
-      </div>
-
-      {/* Quick Reference - Protocol Specific */}
-      {selectedProtocol && (
-        <div className="glass rounded-xl p-6">
-          <h2 className="font-display font-semibold text-white mb-4">
-            {selectedProtocol.name} Quick Reference
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 rounded-lg bg-surface-900/50">
-              <h3 className="font-medium text-cyan-400 mb-2 flex items-center gap-2">
-                <Key className="w-4 h-4" />
-                Available Flows
-              </h3>
-              <ul className="space-y-1.5 text-sm text-surface-300">
-                {selectedProtocol.flows.map((flow: LookingGlassFlow) => (
-                  <li key={flow.id}>
-                    <button
-                      onClick={() => handleFlowSelect(flow)}
-                      className={`hover:text-white transition-colors ${
-                        selectedFlow?.id === flow.id ? 'text-white font-medium' : ''
-                      }`}
-                    >
-                      {flow.name}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="p-4 rounded-lg bg-surface-900/50">
-              <h3 className="font-medium text-purple-400 mb-2 flex items-center gap-2">
-                <Shield className="w-4 h-4" />
-                Security Best Practices
-              </h3>
-              <ul className="space-y-1.5 text-sm text-surface-300">
-                <li>Always validate state parameter</li>
-                <li>Use PKCE for public clients</li>
-                <li>Validate token signatures</li>
-                <li>Check token expiration</li>
-              </ul>
-            </div>
-            <div className="p-4 rounded-lg bg-surface-900/50">
-              <h3 className="font-medium text-orange-400 mb-2 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4" />
-                Common Pitfalls
-              </h3>
-              <ul className="space-y-1.5 text-sm text-surface-300">
-                <li>Not validating redirect URIs</li>
-                <li>Storing tokens insecurely</li>
-                <li>Ignoring token expiration</li>
-                <li>Missing CSRF protection</li>
-              </ul>
-            </div>
-          </div>
         </div>
-      )}
+      </section>
     </div>
+  )
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const config = {
+    completed: { bg: 'bg-green-500/10', border: 'border-green-500/30', text: 'text-green-400', label: 'Completed' },
+    executing: { bg: 'bg-amber-500/10', border: 'border-amber-500/30', text: 'text-amber-400', label: 'Executing...' },
+    awaiting_user: { bg: 'bg-blue-500/10', border: 'border-blue-500/30', text: 'text-blue-400', label: 'Awaiting input' },
+    error: { bg: 'bg-red-500/10', border: 'border-red-500/30', text: 'text-red-400', label: 'Error' },
+  }[status] || { bg: 'bg-surface-800', border: 'border-white/10', text: 'text-surface-400', label: status }
+
+  return (
+    <div className={`px-3 py-1.5 rounded-full ${config.bg} border ${config.border}`}>
+      <span className={`text-sm font-medium ${config.text}`}>{config.label}</span>
+    </div>
+  )
+}
+
+function FlowButton({ 
+  icon: Icon, 
+  label, 
+  sublabel, 
+  color,
+  onClick 
+}: {
+  icon: React.ElementType
+  label: string
+  sublabel: string
+  color: 'blue' | 'green' | 'orange' | 'purple'
+  onClick: () => void
+}) {
+  const colors = {
+    blue: { border: 'border-blue-500/20 hover:border-blue-500/40', bg: 'bg-blue-500/10', text: 'text-blue-400' },
+    green: { border: 'border-green-500/20 hover:border-green-500/40', bg: 'bg-green-500/10', text: 'text-green-400' },
+    orange: { border: 'border-orange-500/20 hover:border-orange-500/40', bg: 'bg-orange-500/10', text: 'text-orange-400' },
+    purple: { border: 'border-purple-500/20 hover:border-purple-500/40', bg: 'bg-purple-500/10', text: 'text-purple-400' },
+  }
+  const c = colors[color]
+
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-4 p-4 rounded-xl border ${c.border} bg-gradient-to-br from-white/[0.02] to-transparent hover:from-white/[0.04] transition-all text-left group`}
+    >
+      <div className={`w-10 h-10 rounded-lg ${c.bg} flex items-center justify-center flex-shrink-0`}>
+        <Icon className={`w-5 h-5 ${c.text}`} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-white">{label}</div>
+        <div className="text-sm text-surface-500">{sublabel}</div>
+      </div>
+      <ChevronRight className="w-5 h-5 text-surface-600 group-hover:text-surface-400 transition-colors" />
+    </button>
+  )
+}
+
+function TokenButton({ 
+  label, 
+  color,
+  active, 
+  onClick 
+}: {
+  label: string
+  color: 'green' | 'orange' | 'blue'
+  active: boolean
+  onClick: () => void
+}) {
+  const colors = {
+    green: active ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-surface-800 text-surface-400 border-transparent hover:text-green-400',
+    orange: active ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' : 'bg-surface-800 text-surface-400 border-transparent hover:text-orange-400',
+    blue: active ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'bg-surface-800 text-surface-400 border-transparent hover:text-blue-400',
+  }
+
+  return (
+    <button
+      onClick={onClick}
+      className={`px-2.5 py-1 rounded-md text-xs font-mono border transition-all ${colors[color]}`}
+    >
+      {label}
+    </button>
   )
 }

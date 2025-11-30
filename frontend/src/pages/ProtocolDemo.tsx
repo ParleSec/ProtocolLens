@@ -2,7 +2,7 @@ import { useParams, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { 
   ArrowLeft, ArrowRight, Shield, Lock, Key, 
-  Unlock, Fingerprint, Zap, Eye, CheckCircle2, Loader2
+  Unlock, Fingerprint, Zap, Eye, Loader2
 } from 'lucide-react'
 import { useProtocol, useProtocolFlows } from '../protocols'
 import { protocolMeta } from '../protocols/registry'
@@ -156,13 +156,6 @@ export function ProtocolDemo() {
                   {/* Gradient accent */}
                   <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${meta.color}`} />
                   
-                  {/* Recommended badge */}
-                  {meta.recommended && (
-                    <div className="absolute top-4 right-4 flex items-center gap-1 px-2 py-1 rounded-full bg-green-500/10 text-green-400 text-xs font-medium border border-green-500/20">
-                      <CheckCircle2 className="w-3 h-3" />
-                      Recommended
-                    </div>
-                  )}
 
                   <div className="flex items-start gap-4">
                     <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${meta.color} flex items-center justify-center shadow-lg`}>
