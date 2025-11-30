@@ -2,12 +2,13 @@ import { useEffect, useState, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
-  ArrowLeft, Eye, ChevronDown, Zap, Shield,
-  Lock, Key, AlertTriangle, CheckCircle2, Copy, Check,
-  Code, ExternalLink, Loader2
+  ArrowLeft, Eye, ChevronDown, ChevronRight,
+  Lock, Key, AlertTriangle, Copy, Check,
+  Code, ExternalLink, Loader2, ArrowRight,
+  Fingerprint, Server, Globe
 } from 'lucide-react'
-import { FlowDiagram } from '../components/lookingglass/FlowDiagram'
 import { TokenInspector } from '../components/lookingglass/TokenInspector'
+import { FlowDiagram } from '../components/lookingglass/FlowDiagram'
 import { useProtocolFlows, FlowStep } from '../protocols'
 import { getFlowWithFallback, flowIdMap } from '../protocols/fallback-data'
 
@@ -18,15 +19,10 @@ export function FlowDetail() {
   const [copied, setCopied] = useState(false)
   const [showCode, setShowCode] = useState(false)
 
-  // Fetch flows from API (modular plugin system)
   const { flows, loading } = useProtocolFlows(protocolId)
-
-  // Map URL slug to flow ID
   const mappedFlowId: string = flowIdMap[flowId || ''] || flowId || ''
 
-  // Try API first, then fallback to local data
   const flow = useMemo(() => {
-    // Look for flow from API
     const apiFlow = flows.find(f => f.id === mappedFlowId)
     if (apiFlow) {
       return {
@@ -35,7 +31,6 @@ export function FlowDetail() {
         steps: apiFlow.steps,
       }
     }
-    // Fallback to local data
     return getFlowWithFallback(flowId || '')
   }, [flows, mappedFlowId, flowId])
 
@@ -43,38 +38,12 @@ export function FlowDetail() {
     setActiveStep(-1)
   }, [flowId])
 
-  // Show loading state while fetching from API
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
-        <Loader2 className="w-8 h-8 text-accent-orange animate-spin" />
+        <Loader2 className="w-6 h-6 text-surface-400 animate-spin" />
       </div>
     )
-  }
-
-  const handleStartDemo = async () => {
-    const codeVerifier = generateCodeVerifier()
-    const codeChallenge = await generateCodeChallenge(codeVerifier)
-    
-    sessionStorage.setItem('pkce_verifier', codeVerifier)
-    sessionStorage.setItem('oauth_flow_type', protocolId || 'oauth2')
-
-    const params = new URLSearchParams({
-      response_type: 'code',
-      client_id: 'public-app',
-      redirect_uri: window.location.origin + '/callback',
-      scope: protocolId === 'oidc' ? 'openid profile email' : 'profile email',
-      state: crypto.randomUUID(),
-      code_challenge: codeChallenge,
-      code_challenge_method: 'S256',
-    })
-
-    if (protocolId === 'oidc') {
-      params.append('nonce', crypto.randomUUID())
-    }
-
-    const endpoint = protocolId === 'oidc' ? '/oidc/authorize' : '/oauth2/authorize'
-    window.location.href = `${endpoint}?${params.toString()}`
   }
 
   const copyCode = (text: string) => {
@@ -85,36 +54,33 @@ export function FlowDetail() {
 
   const getCodeExample = () => {
     if (mappedFlowId === 'authorization_code_pkce') {
-      return `// 1. Generate PKCE parameters
+      return `// Generate PKCE parameters
 const codeVerifier = base64URLEncode(crypto.getRandomValues(new Uint8Array(32)));
-const codeChallenge = base64URLEncode(await crypto.subtle.digest('SHA-256', 
-  new TextEncoder().encode(codeVerifier)));
+const codeChallenge = base64URLEncode(
+  await crypto.subtle.digest('SHA-256', new TextEncoder().encode(codeVerifier))
+);
 
-// 2. Redirect to authorization endpoint
+// Redirect to authorization
 const authUrl = new URL('/oauth2/authorize', origin);
 authUrl.searchParams.set('response_type', 'code');
 authUrl.searchParams.set('client_id', 'your-client-id');
-authUrl.searchParams.set('redirect_uri', 'https://app.com/callback');
 authUrl.searchParams.set('code_challenge', codeChallenge);
 authUrl.searchParams.set('code_challenge_method', 'S256');
-authUrl.searchParams.set('state', crypto.randomUUID());
 window.location.href = authUrl;
 
-// 3. Exchange code for tokens (in callback)
+// Exchange code for tokens (in callback)
 const tokens = await fetch('/oauth2/token', {
   method: 'POST',
   body: new URLSearchParams({
     grant_type: 'authorization_code',
     code: authorizationCode,
-    redirect_uri: 'https://app.com/callback',
-    client_id: 'your-client-id',
     code_verifier: codeVerifier,
   }),
 }).then(r => r.json());`
     }
     
     if (mappedFlowId === 'client_credentials') {
-      return `// Client Credentials Flow (server-side only)
+      return `// Client Credentials (server-side only)
 const tokens = await fetch('/oauth2/token', {
   method: 'POST',
   headers: {
@@ -125,45 +91,27 @@ const tokens = await fetch('/oauth2/token', {
     grant_type: 'client_credentials',
     scope: 'api:read api:write',
   }),
-}).then(r => r.json());
-
-// Use the access token
-const data = await fetch('/api/resource', {
-  headers: { 'Authorization': 'Bearer ' + tokens.access_token },
 }).then(r => r.json());`
     }
 
     if (mappedFlowId === 'token_introspection') {
       return `// Token Introspection (RFC 7662)
-// Resource server validates token with authorization server
-
-const introspectionResult = await fetch('/oauth2/introspect', {
+const result = await fetch('/oauth2/introspect', {
   method: 'POST',
   headers: {
-    'Authorization': 'Basic ' + btoa(resourceServerId + ':' + resourceServerSecret),
+    'Authorization': 'Basic ' + btoa(clientId + ':' + clientSecret),
     'Content-Type': 'application/x-www-form-urlencoded',
   },
-  body: new URLSearchParams({
-    token: accessToken,
-    token_type_hint: 'access_token', // optional
-  }),
+  body: new URLSearchParams({ token: accessToken }),
 }).then(r => r.json());
 
-// Check if token is valid
-if (introspectionResult.active) {
-  console.log('Token is valid');
-  console.log('Scopes:', introspectionResult.scope);
-  console.log('Expires:', new Date(introspectionResult.exp * 1000));
-  console.log('Client:', introspectionResult.client_id);
-} else {
-  console.log('Token is invalid or expired');
+if (result.active) {
+  console.log('Valid until:', new Date(result.exp * 1000));
 }`
     }
 
     if (mappedFlowId === 'token_revocation') {
       return `// Token Revocation (RFC 7009)
-// Invalidate tokens on logout or security events
-
 await fetch('/oauth2/revoke', {
   method: 'POST',
   headers: {
@@ -171,392 +119,332 @@ await fetch('/oauth2/revoke', {
     'Content-Type': 'application/x-www-form-urlencoded',
   },
   body: new URLSearchParams({
-    token: refreshToken, // or accessToken
-    token_type_hint: 'refresh_token', // optional but recommended
+    token: refreshToken,
+    token_type_hint: 'refresh_token',
   }),
-});
-
-// Note: Response is always 200 OK for security
-// (prevents token existence disclosure)
-
-// Clear local token storage
-localStorage.removeItem('access_token');
-localStorage.removeItem('refresh_token');`
+});`
     }
 
     if (mappedFlowId === 'oidc_userinfo') {
-      return `// OIDC UserInfo Endpoint
-// Retrieve user claims with access token
-
+      return `// Fetch user claims
 const userInfo = await fetch('/oidc/userinfo', {
-  headers: {
-    'Authorization': 'Bearer ' + accessToken,
-  },
+  headers: { 'Authorization': 'Bearer ' + accessToken },
 }).then(r => r.json());
 
-console.log('User ID:', userInfo.sub);
-console.log('Name:', userInfo.name);
-console.log('Email:', userInfo.email);
-console.log('Email Verified:', userInfo.email_verified);`
+console.log('User:', userInfo.name, userInfo.email);`
     }
 
     if (mappedFlowId === 'oidc_discovery') {
-      return `// OpenID Connect Discovery
-// Auto-configure client from provider metadata
-
+      return `// Auto-configure from discovery document
 const config = await fetch('/.well-known/openid-configuration')
   .then(r => r.json());
 
-console.log('Issuer:', config.issuer);
-console.log('Authorization Endpoint:', config.authorization_endpoint);
-console.log('Token Endpoint:', config.token_endpoint);
-console.log('UserInfo Endpoint:', config.userinfo_endpoint);
-
-// Fetch signing keys
-const jwks = await fetch(config.jwks_uri).then(r => r.json());
-console.log('Signing Keys:', jwks.keys);`
-    }
-
-    if (mappedFlowId === 'oidc_hybrid') {
-      return `// OIDC Hybrid Flow
-// Get ID token immediately, exchange code for access token
-
-const authUrl = new URL('/oidc/authorize', origin);
-authUrl.searchParams.set('response_type', 'code id_token');
-authUrl.searchParams.set('client_id', 'your-client-id');
-authUrl.searchParams.set('redirect_uri', 'https://app.com/callback');
-authUrl.searchParams.set('scope', 'openid profile email');
-authUrl.searchParams.set('nonce', crypto.randomUUID());
-authUrl.searchParams.set('state', crypto.randomUUID());
-window.location.href = authUrl;
-
-// In callback: id_token in fragment, code in query
-// Validate ID token immediately for user identity
-// Exchange code for access_token on backend`
+const jwks = await fetch(config.jwks_uri).then(r => r.json());`
     }
 
     return `// Authorization Code Flow
 const authUrl = new URL('/oauth2/authorize', origin);
 authUrl.searchParams.set('response_type', 'code');
 authUrl.searchParams.set('client_id', 'your-client-id');
-authUrl.searchParams.set('redirect_uri', 'https://app.com/callback');
 authUrl.searchParams.set('state', crypto.randomUUID());
-window.location.href = authUrl;
+window.location.href = authUrl;`
+  }
 
-// Exchange code (server-side)
-const tokens = await fetch('/oauth2/token', {
-  method: 'POST',
-  body: new URLSearchParams({
-    grant_type: 'authorization_code',
-    code: authorizationCode,
-    client_id: 'your-client-id',
-    client_secret: 'your-secret', // Server-side only!
-  }),
-}).then(r => r.json());`
+  // Get flow badges
+  const getBadges = () => {
+    const badges = []
+    if (mappedFlowId.includes('pkce')) {
+      badges.push({ label: 'PKCE Protected', color: 'green', icon: Lock })
+    }
+    if (mappedFlowId === 'authorization_code') {
+      badges.push({ label: 'Server-side', color: 'yellow', icon: Key })
+    }
+    if (mappedFlowId === 'client_credentials') {
+      badges.push({ label: 'Machine-to-Machine', color: 'blue', icon: Server })
+    }
+    if (mappedFlowId.includes('oidc')) {
+      badges.push({ label: 'ID Token', color: 'purple', icon: Fingerprint })
+    }
+    return badges
   }
 
   if (!flow) {
     return (
       <div className="text-center py-20">
-        <h1 className="text-2xl font-bold text-white mb-4">Flow Not Found</h1>
-        <Link to={`/protocol/${protocolId}`} className="text-accent-orange hover:underline">
+        <h1 className="text-xl font-semibold text-white mb-4">Flow Not Found</h1>
+        <Link to={`/protocol/${protocolId}`} className="text-cyan-400 hover:underline">
           Back to {protocolId === 'oidc' ? 'OpenID Connect' : 'OAuth 2.0'}
         </Link>
       </div>
     )
   }
 
-  return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link
-            to={`/protocol/${protocolId}`}
-            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Link>
-          <div>
-            <div className="flex items-center gap-2 text-sm text-surface-400 mb-1">
-              <span>{protocolId === 'oidc' ? 'OpenID Connect' : 'OAuth 2.0'}</span>
-              <span>→</span>
-              <span className="text-accent-orange">Flow</span>
-            </div>
-            <h1 className="font-display text-2xl font-bold text-white">
-              {flow.title}
-            </h1>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setShowCode(!showCode)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-              showCode 
-                ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' 
-                : 'bg-white/5 text-surface-400 hover:text-white border border-white/10'
-            }`}
-          >
-            <Code className="w-4 h-4" />
-            Code
-          </button>
-          <button
-            onClick={handleStartDemo}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-accent-orange to-accent-purple text-white font-medium hover:opacity-90 transition-opacity"
-          >
-            <Zap className="w-4 h-4" />
-            Try Live Demo
-          </button>
-        </div>
-      </div>
+  const badges = getBadges()
 
-      {/* Flow Description & Badges */}
-      <div className="glass rounded-xl p-6">
-        <p className="text-surface-300 text-lg mb-4">{flow.description}</p>
-        <div className="flex flex-wrap gap-2">
-          {mappedFlowId.includes('pkce') && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-500/10 text-green-400 text-xs font-medium border border-green-500/20">
-              <Lock className="w-3.5 h-3.5" />
-              PKCE Protected
-            </span>
-          )}
-          {mappedFlowId === 'authorization_code' && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-yellow-500/10 text-yellow-400 text-xs font-medium border border-yellow-500/20">
-              <Key className="w-3.5 h-3.5" />
-              Client Secret Required
-            </span>
-          )}
-          {mappedFlowId === 'client_credentials' && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 text-xs font-medium border border-blue-500/20">
-              <Shield className="w-3.5 h-3.5" />
-              Machine-to-Machine
-            </span>
-          )}
-          {mappedFlowId.includes('oidc') && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/10 text-purple-400 text-xs font-medium border border-purple-500/20">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              ID Token Included
-            </span>
-          )}
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Breadcrumb & Title */}
+      <header>
+        <div className="flex items-center gap-2 text-sm text-surface-500 mb-2">
+          <Link to="/protocols" className="hover:text-white transition-colors">Protocols</Link>
+          <ChevronRight className="w-4 h-4" />
+          <Link to={`/protocol/${protocolId}`} className="hover:text-white transition-colors">
+            {protocolId === 'oidc' ? 'OpenID Connect' : 'OAuth 2.0'}
+          </Link>
+          <ChevronRight className="w-4 h-4" />
+          <span className="text-surface-300">{flow.title}</span>
         </div>
-      </div>
+        
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold text-white mb-2">{flow.title}</h1>
+            <p className="text-surface-400">{flow.description}</p>
+          </div>
+          
+          <Link
+            to="/looking-glass"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-cyan-500/20 to-purple-500/20 border border-cyan-500/30 text-cyan-400 text-sm font-medium hover:from-cyan-500/30 hover:to-purple-500/30 transition-all flex-shrink-0"
+          >
+            <Eye className="w-4 h-4" />
+            Try in Looking Glass
+          </Link>
+        </div>
+
+        {/* Badges */}
+        {badges.length > 0 && (
+          <div className="flex gap-2 mt-4">
+            {badges.map(badge => (
+              <span 
+                key={badge.label}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border
+                  ${badge.color === 'green' ? 'bg-green-500/10 text-green-400 border-green-500/20' : ''}
+                  ${badge.color === 'yellow' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : ''}
+                  ${badge.color === 'blue' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : ''}
+                  ${badge.color === 'purple' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : ''}
+                `}
+              >
+                <badge.icon className="w-3 h-3" />
+                {badge.label}
+              </span>
+            ))}
+          </div>
+        )}
+      </header>
+
+      {/* Sequence Diagram */}
+      <section className="rounded-xl border border-white/10 bg-surface-900/30 overflow-hidden">
+        <div className="px-5 py-4 border-b border-white/10">
+          <h2 className="font-medium text-white">Sequence Diagram</h2>
+          <p className="text-sm text-surface-500 mt-1">Click any step for details</p>
+        </div>
+        <div className="p-5">
+          <FlowDiagram 
+            steps={flow.steps}
+            activeStep={activeStep}
+            onStepClick={setActiveStep}
+          />
+        </div>
+      </section>
 
       {/* Code Example */}
-      <AnimatePresence>
-        {showCode && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="glass rounded-xl overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 bg-surface-800 border-b border-white/10">
-                <span className="text-sm font-medium text-white">Implementation Example</span>
+      <section className="rounded-xl border border-white/10 bg-surface-900/30 overflow-hidden">
+        <button
+          onClick={() => setShowCode(!showCode)}
+          className="w-full px-5 py-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors"
+        >
+          <h2 className="font-medium text-white flex items-center gap-2">
+            <Code className="w-4 h-4 text-surface-400" />
+            Implementation Example
+          </h2>
+          <ChevronDown className={`w-4 h-4 text-surface-400 transition-transform ${showCode ? 'rotate-180' : ''}`} />
+        </button>
+
+        <AnimatePresence>
+          {showCode && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="relative border-t border-white/10">
                 <button
                   onClick={() => copyCode(getCodeExample())}
-                  className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-surface-400 hover:text-white hover:bg-white/10 transition-colors"
+                  className="absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-surface-400 hover:text-white hover:bg-white/10 transition-colors"
                 >
                   {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
                   {copied ? 'Copied!' : 'Copy'}
                 </button>
+                <pre className="p-5 overflow-x-auto text-sm">
+                  <code className="text-surface-300 font-mono leading-relaxed">{getCodeExample()}</code>
+                </pre>
               </div>
-              <pre className="p-4 overflow-x-auto">
-                <code className="text-sm text-surface-300 font-mono">{getCodeExample()}</code>
-              </pre>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </section>
 
-      {/* Sequence Diagram */}
-      <div className="glass rounded-xl p-6">
-        <h2 className="font-display text-lg font-semibold text-white mb-4">
-          Sequence Diagram
-        </h2>
-        <p className="text-surface-400 text-sm mb-6">
-          Click any step to see detailed information about what happens at that stage.
-        </p>
-        <FlowDiagram 
-          steps={flow.steps}
-          activeStep={activeStep}
-          onStepClick={setActiveStep}
-        />
-      </div>
-
-      {/* Step Details */}
-      <div className="glass rounded-xl p-6">
-        <h2 className="font-display text-lg font-semibold text-white mb-4">
-          Step-by-Step Breakdown
-        </h2>
-        <div className="space-y-3">
-          {flow.steps.map((step, index) => (
-            <StepCard 
-              key={step.order}
-              step={step}
-              index={index}
-              isActive={activeStep === step.order}
-              onClick={() => setActiveStep(activeStep === step.order ? -1 : step.order)}
-            />
-          ))}
+      {/* Step-by-Step Breakdown */}
+      <section className="rounded-xl border border-white/10 bg-surface-900/30 overflow-hidden">
+        <div className="px-5 py-4 border-b border-white/10">
+          <h2 className="font-medium text-white">Step-by-Step Breakdown</h2>
         </div>
-      </div>
+        <div className="p-5">
+          <div className="space-y-3">
+            {flow.steps.map((step, index) => (
+              <StepRow
+                key={step.order}
+                step={step}
+                index={index}
+                isActive={activeStep === step.order}
+                isLast={index === flow.steps.length - 1}
+                onClick={() => setActiveStep(activeStep === step.order ? -1 : step.order)}
+              />
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* Token Inspector */}
-      <div className="glass rounded-xl p-6">
-        <h3 className="font-display font-semibold text-white mb-4 flex items-center gap-2">
-          <Key className="w-5 h-5 text-accent-cyan" />
-          Token Inspector
-        </h3>
-        <p className="text-surface-400 text-sm mb-4">
-          Paste a JWT token to decode and analyze its contents.
-        </p>
-        <textarea
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          placeholder="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
-          className="w-full h-24 px-4 py-3 rounded-lg bg-surface-900 border border-white/10 text-sm font-mono text-white placeholder-surface-500 focus:outline-none focus:border-accent-orange/50 resize-none mb-4"
-        />
-        {token && <TokenInspector token={token} />}
-      </div>
+      <section className="rounded-xl border border-white/10 bg-surface-900/30 overflow-hidden">
+        <div className="px-5 py-4 border-b border-white/10">
+          <h2 className="font-medium text-white flex items-center gap-2">
+            <Key className="w-4 h-4 text-amber-400" />
+            Token Inspector
+          </h2>
+        </div>
+        <div className="p-5">
+          <input
+            type="text"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder="Paste a JWT to decode..."
+            className="w-full px-4 py-2.5 rounded-lg bg-surface-900 border border-white/10 text-sm font-mono text-white placeholder-surface-600 focus:outline-none focus:border-cyan-500/50 mb-4"
+          />
+          {token && <TokenInspector token={token} />}
+        </div>
+      </section>
 
       {/* Navigation */}
-      <div className="flex items-center justify-center gap-4 pt-4">
+      <div className="flex items-center justify-between pt-2">
         <Link
-          to={`/protocol/${protocolId}`}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white font-medium hover:bg-white/10 transition-colors"
+          to={`/protocols`}
+          className="flex items-center gap-2 text-sm text-surface-400 hover:text-white transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-          Back to Flows
+          All Protocols
         </Link>
         <Link
           to="/looking-glass"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white font-medium hover:bg-white/10 transition-colors"
+          className="flex items-center gap-2 text-sm text-surface-400 hover:text-white transition-colors"
         >
-          <Eye className="w-4 h-4" />
-          Looking Glass
-          <ExternalLink className="w-3.5 h-3.5 text-surface-400" />
+          Open Looking Glass
+          <ExternalLink className="w-4 h-4" />
         </Link>
       </div>
     </div>
   )
 }
 
-// Step Card Component
-function StepCard({ step, index, isActive, onClick }: { 
+// Step Row Component
+function StepRow({ step, index, isActive, isLast, onClick }: { 
   step: FlowStep & { security?: string[] }
   index: number
   isActive: boolean
+  isLast: boolean
   onClick: () => void 
 }) {
-  const typeColors: Record<string, string> = {
-    request: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-    response: 'bg-green-500/10 text-green-400 border-green-500/20',
-    redirect: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
-    internal: 'bg-gray-500/10 text-gray-400 border-gray-500/20',
+  const typeConfig: Record<string, { color: string; icon: React.ElementType }> = {
+    request: { color: 'text-blue-400 bg-blue-500/10 border-blue-500/20', icon: ArrowRight },
+    response: { color: 'text-green-400 bg-green-500/10 border-green-500/20', icon: ArrowLeft },
+    redirect: { color: 'text-amber-400 bg-amber-500/10 border-amber-500/20', icon: Globe },
+    internal: { color: 'text-surface-400 bg-surface-800 border-white/10', icon: Server },
   }
+  
+  const config = typeConfig[step.type] || typeConfig.request
+  const TypeIcon = config.icon
 
   return (
-    <motion.div
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: index * 0.05 }}
-      className={`rounded-xl border transition-all cursor-pointer ${
-        isActive 
-          ? 'bg-indigo-500/10 border-indigo-500/30' 
-          : 'bg-surface-900/50 border-white/5 hover:border-white/10'
-      }`}
-      onClick={onClick}
-    >
-      <div className="p-4">
-        <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
-            isActive ? 'bg-indigo-500 text-white' : 'bg-surface-800 text-surface-400'
-          }`}>
+    <div className="relative">
+      {/* Connector line */}
+      {!isLast && (
+        <div className="absolute left-5 top-10 bottom-0 w-px bg-white/10" />
+      )}
+      
+      <motion.div
+        initial={{ opacity: 0, x: -10 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ delay: index * 0.03 }}
+        onClick={onClick}
+        className={`relative rounded-lg border cursor-pointer transition-all ${
+          isActive 
+            ? 'bg-white/5 border-white/20' 
+            : 'border-transparent hover:bg-white/[0.02] hover:border-white/10'
+        }`}
+      >
+        <div className="p-3 flex items-start gap-3">
+          {/* Step number */}
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium flex-shrink-0 border ${config.color}`}>
             {step.order}
           </div>
-          <div className="flex-1 min-w-0">
+          
+          {/* Content */}
+          <div className="flex-1 min-w-0 pt-1">
             <div className="flex items-center gap-2 mb-0.5">
-              <h4 className="font-medium text-white truncate">{step.name}</h4>
-              <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${typeColors[step.type] || typeColors.request}`}>
-                {step.type}
-              </span>
+              <span className="font-medium text-white">{step.name}</span>
+              <TypeIcon className={`w-3.5 h-3.5 ${config.color.split(' ')[0]}`} />
             </div>
-            <p className="text-sm text-surface-400">
+            <div className="text-sm text-surface-500">
               {step.from} → {step.to}
-            </p>
+            </div>
           </div>
-          <ChevronDown className={`w-5 h-5 text-surface-400 transition-transform ${isActive ? 'rotate-180' : ''}`} />
+
+          {/* Expand indicator */}
+          <ChevronDown className={`w-4 h-4 text-surface-500 transition-transform mt-2 ${isActive ? 'rotate-180' : ''}`} />
         </div>
-      </div>
 
-      <AnimatePresence>
-        {isActive && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="px-4 pb-4 pt-2 border-t border-white/5 space-y-4">
-              <p className="text-surface-300">{step.description}</p>
+        {/* Expanded content */}
+        <AnimatePresence>
+          {isActive && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="px-3 pb-3 pt-1 ml-[52px] space-y-3">
+                <p className="text-sm text-surface-300">{step.description}</p>
 
-              {step.parameters && Object.keys(step.parameters).length > 0 && (
-                <div>
-                  <h5 className="text-xs font-semibold text-surface-500 uppercase tracking-wider mb-2">Parameters</h5>
-                  <div className="grid gap-2">
+                {step.parameters && Object.keys(step.parameters).length > 0 && (
+                  <div className="grid gap-1.5">
                     {Object.entries(step.parameters).map(([key, value]) => (
-                      <div key={key} className="flex gap-3 p-2.5 rounded-lg bg-surface-900/80">
-                        <code className="text-cyan-400 text-sm font-mono whitespace-nowrap">{key}</code>
-                        <span className="text-surface-300 text-sm">{value}</span>
+                      <div key={key} className="flex gap-3 text-sm">
+                        <code className="text-cyan-400 font-mono">{key}</code>
+                        <span className="text-surface-400">{value}</span>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+                )}
 
-              {step.security && step.security.length > 0 && (
-                <div className="p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/20">
-                  <h5 className="text-xs font-semibold text-yellow-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    Security Considerations
-                  </h5>
-                  <ul className="space-y-1.5">
-                    {step.security.map((note, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-yellow-200/90">
-                        <CheckCircle2 className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-                        {note}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
+                {step.security && step.security.length > 0 && (
+                  <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                    <div className="flex items-center gap-1.5 text-xs font-medium text-amber-400 mb-2">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      Security Note
+                    </div>
+                    <ul className="space-y-1">
+                      {step.security.map((note, i) => (
+                        <li key={i} className="text-sm text-amber-200/80">• {note}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </div>
   )
-}
-
-// PKCE Helper Functions
-function generateCodeVerifier(): string {
-  const array = new Uint8Array(32)
-  crypto.getRandomValues(array)
-  return base64URLEncode(array)
-}
-
-async function generateCodeChallenge(verifier: string): Promise<string> {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(verifier)
-  const digest = await crypto.subtle.digest('SHA-256', data)
-  return base64URLEncode(new Uint8Array(digest))
-}
-
-function base64URLEncode(buffer: Uint8Array): string {
-  return btoa(String.fromCharCode(...buffer))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '')
 }
 
