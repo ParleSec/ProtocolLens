@@ -91,10 +91,30 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Validate required parameters
-	if responseType != "code" {
-		writeOIDCError(w, http.StatusBadRequest, "unsupported_response_type", "Only 'code' response type is supported")
+	// Validate response type
+	validResponseTypes := map[string]bool{
+		"code":           true,
+		"token":          true,
+		"id_token":       true,
+		"id_token token": true,
+		"token id_token": true,
+	}
+	if !validResponseTypes[responseType] {
+		writeOIDCError(w, http.StatusBadRequest, "unsupported_response_type", "Supported: code, token, id_token, id_token token")
 		return
+	}
+
+	// Nonce is required for implicit flows that return id_token
+	if strings.Contains(responseType, "id_token") && nonce == "" {
+		p.emitEvent(sessionID, lookingglass.EventTypeSecurityWarning, "Missing Nonce for Implicit Flow", map[string]interface{}{
+			"response_type": responseType,
+		}, lookingglass.Annotation{
+			Type:        lookingglass.AnnotationTypeSecurityHint,
+			Title:       "Nonce Required",
+			Description: "When requesting id_token in response_type, nonce is required to prevent replay attacks",
+			Severity:    "warning",
+		})
+		// Continue anyway for demo purposes, but log warning
 	}
 
 	if clientID == "" {
@@ -125,6 +145,7 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		htmlEscape(codeChallenge),
 		htmlEscape(codeChallengeMethod),
 		htmlEscape(client.Name),
+		htmlEscape(responseType),
 	)
 	w.Header().Set("Content-Type", "text/html")
 	w.Write([]byte(loginPage))
@@ -147,6 +168,10 @@ func (p *Plugin) handleAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
 	nonce := r.FormValue("nonce")
 	codeChallenge := r.FormValue("code_challenge")
 	codeChallengeMethod := r.FormValue("code_challenge_method")
+	responseType := r.FormValue("response_type")
+	if responseType == "" {
+		responseType = "code"
+	}
 
 	// Validate redirect URI against registered client URIs to prevent open redirect
 	if !p.mockIdP.ValidateRedirectURI(clientID, redirectURI) {
@@ -172,20 +197,11 @@ func (p *Plugin) handleAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
 			htmlEscape(codeChallenge),
 			htmlEscape(codeChallengeMethod),
 			htmlEscape(clientName),
+			htmlEscape(responseType),
 		)
 		loginPage = strings.Replace(loginPage, "<!-- ERROR -->", `<div class="error">Invalid email or password</div>`, 1)
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(loginPage))
-		return
-	}
-
-	// Create authorization code
-	authCode, err := p.mockIdP.CreateAuthorizationCode(
-		clientID, user.ID, redirectURI, scope, state, nonce,
-		codeChallenge, codeChallengeMethod,
-	)
-	if err != nil {
-		writeOIDCError(w, http.StatusInternalServerError, "server_error", "Failed to create authorization code")
 		return
 	}
 
@@ -195,12 +211,72 @@ func (p *Plugin) handleAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
 		writeOIDCError(w, http.StatusBadRequest, "invalid_request", "Malformed redirect_uri")
 		return
 	}
-	q := redirectURL.Query()
-	q.Set("code", authCode.Code)
-	if state != "" {
-		q.Set("state", state)
+
+	// Handle based on response_type
+	if responseType == "code" {
+		// Authorization Code Flow
+		authCode, err := p.mockIdP.CreateAuthorizationCode(
+			clientID, user.ID, redirectURI, scope, state, nonce,
+			codeChallenge, codeChallengeMethod,
+		)
+		if err != nil {
+			writeOIDCError(w, http.StatusInternalServerError, "server_error", "Failed to create authorization code")
+			return
+		}
+		q := redirectURL.Query()
+		q.Set("code", authCode.Code)
+		if state != "" {
+			q.Set("state", state)
+		}
+		redirectURL.RawQuery = q.Encode()
+	} else {
+		// Implicit Flow - return tokens in fragment
+		fragment := url.Values{}
+		jwtService := p.mockIdP.JWTService()
+		
+		// Generate access token if requested
+		if strings.Contains(responseType, "token") {
+			accessToken, err := jwtService.CreateAccessToken(
+				user.ID,
+				clientID,
+				scope,
+				time.Hour,
+				nil,
+			)
+			if err != nil {
+				writeOIDCError(w, http.StatusInternalServerError, "server_error", "Failed to create access token")
+				return
+			}
+			fragment.Set("access_token", accessToken)
+			fragment.Set("token_type", "Bearer")
+			fragment.Set("expires_in", "3600")
+		}
+		
+		// Generate ID token if requested
+		if strings.Contains(responseType, "id_token") {
+			scopes := strings.Split(scope, " ")
+			userClaims := p.mockIdP.UserClaims(user.ID, scopes)
+			idToken, err := jwtService.CreateIDToken(
+				user.ID,
+				clientID,
+				nonce,
+				time.Now(),
+				time.Hour,
+				userClaims,
+			)
+			if err != nil {
+				writeOIDCError(w, http.StatusInternalServerError, "server_error", "Failed to create ID token")
+				return
+			}
+			fragment.Set("id_token", idToken)
+		}
+		
+		if state != "" {
+			fragment.Set("state", state)
+		}
+		
+		redirectURL.Fragment = fragment.Encode()
 	}
-	redirectURL.RawQuery = q.Encode()
 
 	// Redirect to client (safe - redirect URI validated against registered URIs)
 	http.Redirect(w, r, redirectURL.String(), http.StatusFound)
@@ -532,13 +608,16 @@ func (p *Plugin) issueOIDCTokens(authCode *models.AuthorizationCode) (*models.To
 	return response, nil
 }
 
-func (p *Plugin) generateOIDCLoginPage(clientID, redirectURI, scope, state, nonce, codeChallenge, codeChallengeMethod, clientName string) string {
+func (p *Plugin) generateOIDCLoginPage(clientID, redirectURI, scope, state, nonce, codeChallenge, codeChallengeMethod, clientName, responseType string) string {
 	if clientName == "" {
 		if client, exists := p.mockIdP.GetClient(clientID); exists {
 			clientName = client.Name
 		} else {
 			clientName = clientID
 		}
+	}
+	if responseType == "" {
+		responseType = "code"
 	}
 
 	return `<!DOCTYPE html>
@@ -712,6 +791,7 @@ func (p *Plugin) generateOIDCLoginPage(clientID, redirectURI, scope, state, nonc
             <input type="hidden" name="nonce" value="` + nonce + `">
             <input type="hidden" name="code_challenge" value="` + codeChallenge + `">
             <input type="hidden" name="code_challenge_method" value="` + codeChallengeMethod + `">
+            <input type="hidden" name="response_type" value="` + responseType + `">
             
             <div class="form-group">
                 <label for="email">Email</label>

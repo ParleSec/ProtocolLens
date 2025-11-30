@@ -708,6 +708,7 @@ export const flowIdMap: Record<string, string> = {
   'oidc-code': 'oidc_authorization_code',
   'oidc-authorization-code': 'oidc_authorization_code',
   'oidc-implicit': 'oidc_implicit',
+  'oidc_implicit': 'oidc_implicit',
   'hybrid': 'oidc_hybrid',
   'userinfo': 'oidc_userinfo',
   'discovery': 'oidc_discovery',

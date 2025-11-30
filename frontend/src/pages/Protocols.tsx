@@ -37,6 +37,7 @@ const protocols = [
     specUrl: 'https://openid.net/specs/openid-connect-core-1_0.html',
     flows: [
       { id: 'oidc-authorization-code', name: 'Authorization Code Flow', rfc: '§3.1' },
+      { id: 'oidc-implicit', name: 'Implicit Flow (Legacy)', rfc: '§3.2' },
       { id: 'hybrid', name: 'Hybrid Flow', rfc: '§3.3' },
       { id: 'userinfo', name: 'UserInfo Endpoint', rfc: '§5.3' },
       { id: 'discovery', name: 'Discovery', rfc: 'Discovery 1.0' },

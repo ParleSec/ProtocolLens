@@ -2,12 +2,13 @@
  * Looking Glass - Protocol Execution & Inspection
  */
 
-import React, { useState, useCallback, useMemo } from 'react'
+import React, { useState, useCallback, useMemo, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Eye, Play, RotateCcw, Key, Terminal, Square,
-  ChevronRight, Fingerprint, Shield, Lock, Sparkles
+  ChevronRight, Fingerprint, Shield, Lock, Sparkles,
+  RefreshCw
 } from 'lucide-react'
 
 import {
@@ -27,6 +28,8 @@ export function LookingGlass() {
   const [selectedProtocol, setSelectedProtocol] = useState<LookingGlassProtocol | null>(null)
   const [selectedFlow, setSelectedFlow] = useState<LookingGlassFlow | null>(null)
   const [inspectedToken, setInspectedToken] = useState('')
+  const [refreshTokenInput, setRefreshTokenInput] = useState('')
+  const [storedRefreshToken, setStoredRefreshToken] = useState<string | null>(null)
 
   const { protocols, loading: protocolsLoading } = useProtocols()
 
@@ -37,13 +40,24 @@ export function LookingGlass() {
     [selectedProtocol?.id]
   )
 
+  const flowId = useMemo(() => 
+    selectedFlow?.id?.toLowerCase().replace(/_/g, '-'),
+    [selectedFlow?.id]
+  )
+
+  const isRefreshTokenFlow = flowId === 'refresh-token'
+
   const clientConfig = useMemo(() => {
-    const flowId = selectedFlow?.id?.toLowerCase().replace(/_/g, '-')
     if (flowId === 'client-credentials') {
       return { clientId: 'machine-client', clientSecret: 'machine-secret' }
     }
+    // All other flows (including refresh-token) use public-app
+    // The refresh token must be used with the same client that obtained it
     return { clientId: 'public-app', clientSecret: undefined }
-  }, [selectedFlow?.id])
+  }, [flowId])
+
+  // Use stored token, input, or empty
+  const activeRefreshToken = refreshTokenInput || storedRefreshToken || ''
 
   const realExecutor = useRealFlowExecutor({
     protocolId: selectedProtocol?.id || null,
@@ -52,7 +66,15 @@ export function LookingGlass() {
     clientSecret: clientConfig.clientSecret,
     redirectUri: `${window.location.origin}/callback`,
     scopes,
+    refreshToken: isRefreshTokenFlow ? activeRefreshToken : undefined,
   })
+
+  // Store refresh token from completed flows
+  useEffect(() => {
+    if (realExecutor.state?.status === 'completed' && realExecutor.state?.tokens.refreshToken) {
+      setStoredRefreshToken(realExecutor.state.tokens.refreshToken)
+    }
+  }, [realExecutor.state?.status, realExecutor.state?.tokens.refreshToken])
 
   const handleProtocolSelect = useCallback((protocol: LookingGlassProtocol) => {
     setSelectedProtocol(protocol)
@@ -118,7 +140,7 @@ export function LookingGlass() {
             <Sparkles className="w-4 h-4 text-amber-400" />
             <span>Quick start — select a flow to begin</span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             <FlowButton
               icon={Shield}
               label="Authorization Code"
@@ -132,6 +154,13 @@ export function LookingGlass() {
               sublabel="OAuth 2.0"
               color="green"
               onClick={() => handleQuickSelect('oauth2', 'client_credentials')}
+            />
+            <FlowButton
+              icon={RefreshCw}
+              label="Refresh Token"
+              sublabel="OAuth 2.0"
+              color="purple"
+              onClick={() => handleQuickSelect('oauth2', 'refresh_token')}
             />
             <FlowButton
               icon={Fingerprint}
@@ -170,6 +199,52 @@ export function LookingGlass() {
           onFlowSelect={handleFlowSelect}
           loading={protocolsLoading}
         />
+
+        {/* Refresh Token Input - shown when refresh token flow is selected */}
+        {isRefreshTokenFlow && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-4 pt-4 border-t border-white/10"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <RefreshCw className="w-4 h-4 text-blue-400" />
+              <span className="text-sm font-medium text-surface-300">Refresh Token</span>
+              {storedRefreshToken && !refreshTokenInput && (
+                <span className="px-2 py-0.5 rounded text-xs bg-green-500/10 text-green-400">
+                  Using captured token
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-surface-500 mb-3">
+              Run an Authorization Code flow first to capture a refresh token, or paste one below.
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={refreshTokenInput}
+                onChange={(e) => setRefreshTokenInput(e.target.value)}
+                placeholder={storedRefreshToken ? "Using captured token (or paste new one)" : "Paste refresh token here..."}
+                className="flex-1 px-3 py-2 rounded-lg bg-surface-900 border border-white/10 text-sm font-mono text-white placeholder-surface-600 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all"
+              />
+              {storedRefreshToken && (
+                <button
+                  onClick={() => setRefreshTokenInput(storedRefreshToken)}
+                  className="px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-400 text-sm hover:bg-blue-500/20 transition-colors"
+                  title="Use captured refresh token"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            {!activeRefreshToken && (
+              <p className="mt-2 text-xs text-amber-400">
+                ⚠️ No refresh token available. Run Authorization Code flow first or paste a token.
+              </p>
+            )}
+          </motion.div>
+        )}
       </section>
 
       {/* Execution */}
@@ -356,7 +431,7 @@ function FlowButton({
   icon: React.ElementType
   label: string
   sublabel: string
-  color: 'blue' | 'green' | 'orange' | 'purple'
+  color: 'blue' | 'green' | 'orange' | 'purple' | 'cyan'
   onClick: () => void
 }) {
   const colors = {
@@ -364,6 +439,7 @@ function FlowButton({
     green: { border: 'border-green-500/20 hover:border-green-500/40', bg: 'bg-green-500/10', text: 'text-green-400' },
     orange: { border: 'border-orange-500/20 hover:border-orange-500/40', bg: 'bg-orange-500/10', text: 'text-orange-400' },
     purple: { border: 'border-purple-500/20 hover:border-purple-500/40', bg: 'bg-purple-500/10', text: 'text-purple-400' },
+    cyan: { border: 'border-cyan-500/20 hover:border-cyan-500/40', bg: 'bg-cyan-500/10', text: 'text-cyan-400' },
   }
   const c = colors[color]
 
