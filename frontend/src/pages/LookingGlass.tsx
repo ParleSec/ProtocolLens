@@ -1,13 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { useParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Eye, Shield, Key, Lock, Clock, AlertTriangle, 
   CheckCircle, XCircle, ChevronRight,
   Play, RotateCcw, Zap, Copy, Check,
-  ArrowRight, Globe, Terminal, Info
+  ArrowRight, Globe, Terminal, Info, Wifi, WifiOff
 } from 'lucide-react'
 import { TokenInspector } from '../components/lookingglass/TokenInspector'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { api } from '../utils'
 
 // Stage type definition
 interface Stage {
@@ -154,54 +156,125 @@ interface FlowEvent {
   stage: StageId
   timestamp: Date
   status: 'pending' | 'success' | 'error'
+  title?: string
+  description?: string
   data?: Record<string, unknown>
   duration?: number
+  eventType?: string
 }
 
+// Map backend event types to stage IDs
+const eventTypeToStage: Record<string, StageId> = {
+  'flow.step': 'authorization_request',
+  'token.issued': 'token_exchange',
+  'token.validated': 'token_validation',
+  'request.sent': 'authorization_request',
+  'response.received': 'authorization_response',
+  'security.warning': 'user_authentication',
+  'security.info': 'user_authentication',
+  'crypto.operation': 'pkce_generation',
+}
+
+// Simulation flow steps
+const simulationSteps: StageId[] = [
+  'pkce_generation',
+  'authorization_request', 
+  'user_authentication',
+  'authorization_response',
+  'token_exchange',
+  'token_validation'
+]
+
 export function LookingGlass() {
+  const { sessionId } = useParams<{ sessionId?: string }>()
   const [events, setEvents] = useState<FlowEvent[]>([])
   const [selectedStage, setSelectedStage] = useState<StageId | null>(null)
   const [isSimulating, setIsSimulating] = useState(false)
   const [currentSimStep, setCurrentSimStep] = useState(0)
   const [pastedToken, setPastedToken] = useState('')
   const [copied, setCopied] = useState<string | null>(null)
+  const [activeSession, setActiveSession] = useState<string | null>(sessionId || null)
 
-  const { lastMessage } = useWebSocket('/ws/lookingglass')
+  // Build WebSocket URL based on session
+  const wsUrl = activeSession ? `/ws/lookingglass/${activeSession}` : null
 
-  // Handle WebSocket messages
-  useEffect(() => {
-    if (lastMessage) {
-      try {
-        const parsed = JSON.parse(lastMessage) as {
-          type?: string
-          success?: boolean
-          data?: Record<string, unknown>
-          duration?: number
-        }
-        const event: FlowEvent = {
-          id: crypto.randomUUID(),
-          stage: (parsed.type || 'unknown') as StageId,
-          timestamp: new Date(),
-          status: parsed.success ? 'success' : 'error',
-          data: parsed.data,
-          duration: parsed.duration,
-        }
-        setEvents(prev => [event, ...prev].slice(0, 50))
-      } catch {
-        // Ignore non-JSON messages
+  const handleMessage = useCallback((message: string) => {
+    try {
+      const parsed = JSON.parse(message) as {
+        id?: string
+        type?: string
+        title?: string
+        description?: string
+        timestamp?: string
+        data?: Record<string, unknown>
+        annotations?: Array<{ title: string; description: string }>
       }
+      
+      // Map event type to a stage
+      const mappedStage = eventTypeToStage[parsed.type || ''] || 'authorization_request'
+      
+      // Determine status from event type
+      let status: 'pending' | 'success' | 'error' = 'success'
+      if (parsed.type?.includes('warning') || parsed.type?.includes('error')) {
+        status = 'error'
+      } else if (parsed.type?.includes('pending')) {
+        status = 'pending'
+      }
+      
+      const event: FlowEvent = {
+        id: parsed.id || crypto.randomUUID(),
+        stage: mappedStage,
+        timestamp: parsed.timestamp ? new Date(parsed.timestamp) : new Date(),
+        status,
+        title: parsed.title,
+        description: parsed.description || parsed.annotations?.[0]?.description,
+        data: parsed.data,
+        eventType: parsed.type,
+      }
+      
+      setEvents(prev => [event, ...prev].slice(0, 100))
+      setSelectedStage(mappedStage)
+      
+      // Update current simulation step based on event type
+      const stepIndex = simulationSteps.indexOf(mappedStage)
+      if (stepIndex >= 0) {
+        setCurrentSimStep(prev => Math.max(prev, stepIndex + 1))
+      }
+    } catch {
+      // Ignore non-JSON messages
     }
-  }, [lastMessage])
+  }, [])
 
-  // Simulation flow
-  const simulationSteps: StageId[] = [
-    'pkce_generation',
-    'authorization_request', 
-    'user_authentication',
-    'authorization_response',
-    'token_exchange',
-    'token_validation'
-  ]
+  const { connected } = useWebSocket(wsUrl, {
+    onMessage: handleMessage,
+    reconnect: true,
+    reconnectInterval: 3000,
+    maxReconnectAttempts: 10,
+  })
+
+  // Load existing session events when sessionId is provided
+  useEffect(() => {
+    if (sessionId) {
+      setActiveSession(sessionId)
+      // Fetch historical events for the session
+      api.getSession(sessionId)
+        .then(session => {
+          const historicalEvents: FlowEvent[] = session.events.map(evt => ({
+            id: crypto.randomUUID(),
+            stage: eventTypeToStage[evt.type] || 'authorization_request',
+            timestamp: new Date(evt.timestamp),
+            status: evt.type.includes('warning') ? 'error' : 'success',
+            title: evt.title,
+            data: evt.data,
+            eventType: evt.type,
+          }))
+          setEvents(historicalEvents.reverse())
+        })
+        .catch(() => {
+          // Session might not exist yet
+        })
+    }
+  }, [sessionId])
 
   const runSimulation = () => {
     setIsSimulating(true)
@@ -244,34 +317,67 @@ export function LookingGlass() {
           <h1 className="font-display text-2xl font-bold text-white flex items-center gap-3">
             <Eye className="w-7 h-7 text-accent-cyan" />
             Looking Glass
+            {activeSession && (
+              <span className="text-sm font-normal text-surface-500">
+                Session: {activeSession.slice(0, 8)}...
+              </span>
+            )}
           </h1>
           <p className="text-surface-400 mt-1">Deep inspection of OAuth 2.0 / OIDC authentication flows</p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setEvents([])}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-surface-400 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <RotateCcw className="w-4 h-4" />
-            Clear
-          </button>
-          <button
-            onClick={runSimulation}
-            disabled={isSimulating}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-500 text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            {isSimulating ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Simulating...
-              </>
-            ) : (
-              <>
-                <Play className="w-4 h-4" />
-                Run Flow Simulation
-              </>
-            )}
-          </button>
+        <div className="flex items-center gap-3">
+          {/* WebSocket status indicator */}
+          {activeSession && (
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium ${
+              connected 
+                ? 'bg-green-500/10 border border-green-500/20 text-green-400' 
+                : 'bg-red-500/10 border border-red-500/20 text-red-400'
+            }`}>
+              {connected ? (
+                <>
+                  <Wifi className="w-3.5 h-3.5" />
+                  <span>Live</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                </>
+              ) : (
+                <>
+                  <WifiOff className="w-3.5 h-3.5" />
+                  <span>Disconnected</span>
+                </>
+              )}
+            </div>
+          )}
+          
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setEvents([])
+                setCurrentSimStep(0)
+                setSelectedStage(null)
+              }}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-surface-400 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Clear
+            </button>
+            <button
+              onClick={runSimulation}
+              disabled={isSimulating}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-500 text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {isSimulating ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Simulating...
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4" />
+                  Run Flow Simulation
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -449,26 +555,44 @@ export function LookingGlass() {
               </div>
               <p className="text-surface-400">No events yet</p>
               <p className="text-surface-500 text-sm mt-1">Run a simulation or complete a live auth flow</p>
+              {connected && (
+                <div className="mt-4 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                  <span className="text-xs text-green-400">Listening for real-time events...</span>
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-2 max-h-[400px] overflow-y-auto">
-              <AnimatePresence>
+              {/* Event count */}
+              <div className="flex items-center justify-between text-xs text-surface-500 px-2">
+                <span>{events.length} event{events.length !== 1 ? 's' : ''}</span>
+                {connected && (
+                  <span className="flex items-center gap-1.5 text-green-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                    Live
+                  </span>
+                )}
+              </div>
+              <AnimatePresence mode="popLayout">
                 {events.map((event) => {
                   const stage = stages[event.stage]
+                  const displayTitle = event.title || stage?.name || event.stage
                   return (
                     <motion.div
                       key={event.id}
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, x: -20 }}
-                      className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                      layout
+                      initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, x: -20, scale: 0.95 }}
+                      className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
                         selectedStage === event.stage 
                           ? 'bg-indigo-500/10 border border-indigo-500/30' 
                           : 'bg-surface-900/50 hover:bg-surface-800/50'
                       }`}
                       onClick={() => setSelectedStage(event.stage)}
                     >
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
                         event.status === 'success' 
                           ? 'bg-green-500/20 text-green-400' 
                           : event.status === 'error'
@@ -484,9 +608,23 @@ export function LookingGlass() {
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-white truncate">{stage?.name || event.stage}</p>
-                        <p className="text-xs text-surface-500">
-                          {event.timestamp.toLocaleTimeString()}
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-white truncate">{displayTitle}</p>
+                          {event.eventType && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-700 text-surface-400 uppercase tracking-wide whitespace-nowrap">
+                              {event.eventType.split('.').pop()}
+                            </span>
+                          )}
+                        </div>
+                        {event.description && (
+                          <p className="text-xs text-surface-400 mt-0.5 line-clamp-2">{event.description}</p>
+                        )}
+                        <p className="text-xs text-surface-500 mt-1">
+                          {event.timestamp.toLocaleTimeString(undefined, { 
+                            hour: '2-digit', 
+                            minute: '2-digit', 
+                            second: '2-digit' 
+                          })}
                           {event.duration && ` • ${event.duration}ms`}
                         </p>
                       </div>

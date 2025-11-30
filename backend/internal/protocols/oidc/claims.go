@@ -4,19 +4,42 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/security-showcase/protocol-showcase/internal/lookingglass"
 )
 
 // handleUserInfo handles the UserInfo endpoint
 func (p *Plugin) handleUserInfo(w http.ResponseWriter, r *http.Request) {
+	sessionID := p.getSessionFromRequest(r)
+	
+	// Emit UserInfo request
+	p.emitEvent(sessionID, lookingglass.EventTypeFlowStep, "UserInfo Request", map[string]interface{}{
+		"step":     9,
+		"from":     "Client",
+		"to":       "OpenID Provider",
+		"endpoint": "/oidc/userinfo",
+	}, lookingglass.Annotation{
+		Type:        lookingglass.AnnotationTypeExplanation,
+		Title:       "UserInfo Endpoint",
+		Description: "Returns claims about the authenticated user. The access token determines which claims are returned based on the scopes.",
+		Reference:   "OpenID Connect Core 1.0 Section 5.3",
+	})
+
 	// Extract access token from Authorization header
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
+		p.emitEvent(sessionID, lookingglass.EventTypeSecurityWarning, "Missing Authorization", map[string]interface{}{
+			"error": "invalid_token",
+		})
 		writeOIDCError(w, http.StatusUnauthorized, "invalid_token", "Missing Authorization header")
 		return
 	}
 
 	parts := strings.SplitN(authHeader, " ", 2)
 	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
+		p.emitEvent(sessionID, lookingglass.EventTypeSecurityWarning, "Invalid Authorization Format", map[string]interface{}{
+			"error": "expected_bearer",
+		})
 		writeOIDCError(w, http.StatusUnauthorized, "invalid_token", "Invalid Authorization header format")
 		return
 	}
@@ -27,6 +50,9 @@ func (p *Plugin) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 	jwtService := p.mockIdP.JWTService()
 	claims, err := jwtService.ValidateToken(accessToken)
 	if err != nil {
+		p.emitEvent(sessionID, lookingglass.EventTypeSecurityWarning, "Token Validation Failed", map[string]interface{}{
+			"error": err.Error(),
+		})
 		writeOIDCError(w, http.StatusUnauthorized, "invalid_token", "Token validation failed")
 		return
 	}
@@ -48,6 +74,18 @@ func (p *Plugin) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 		writeOIDCError(w, http.StatusNotFound, "invalid_request", "User not found")
 		return
 	}
+
+	// Emit UserInfo response
+	p.emitEvent(sessionID, lookingglass.EventTypeResponseReceived, "UserInfo Response", map[string]interface{}{
+		"user_id":      userID,
+		"scopes":       scopes,
+		"claims_count": len(userClaims),
+	}, lookingglass.Annotation{
+		Type:        lookingglass.AnnotationTypeExplanation,
+		Title:       "UserInfo Claims",
+		Description: "The claims returned depend on the scopes in the access token: openid→sub, profile→name/etc, email→email/verified",
+		Reference:   "OpenID Connect Core 1.0 Section 5.4",
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(userClaims)

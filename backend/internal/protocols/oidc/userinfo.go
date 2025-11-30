@@ -8,8 +8,26 @@ import (
 	"strings"
 	"time"
 
+	"github.com/security-showcase/protocol-showcase/internal/lookingglass"
 	"github.com/security-showcase/protocol-showcase/pkg/models"
 )
+
+// getSessionFromRequest extracts the session ID from request headers or query params
+func (p *Plugin) getSessionFromRequest(r *http.Request) string {
+	if sessionID := r.Header.Get("X-Looking-Glass-Session"); sessionID != "" {
+		return sessionID
+	}
+	return r.URL.Query().Get("lg_session")
+}
+
+// emitEvent emits an event to the Looking Glass session if active
+func (p *Plugin) emitEvent(sessionID string, eventType lookingglass.EventType, title string, data map[string]interface{}, annotations ...lookingglass.Annotation) {
+	if p.lookingGlass == nil || sessionID == "" {
+		return
+	}
+	broadcaster := p.lookingGlass.NewEventBroadcaster(sessionID)
+	broadcaster.Emit(eventType, title, data, annotations...)
+}
 
 // htmlEscape escapes a string for safe inclusion in HTML
 func htmlEscape(s string) string {
@@ -19,6 +37,7 @@ func htmlEscape(s string) string {
 // handleAuthorize handles OIDC authorization requests
 func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
+	sessionID := p.getSessionFromRequest(r)
 
 	responseType := query.Get("response_type")
 	clientID := query.Get("client_id")
@@ -29,10 +48,47 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	codeChallenge := query.Get("code_challenge")
 	codeChallengeMethod := query.Get("code_challenge_method")
 
+	// Emit OIDC authorization request
+	p.emitEvent(sessionID, lookingglass.EventTypeFlowStep, "OIDC Authentication Request", map[string]interface{}{
+		"step":          1,
+		"from":          "Client",
+		"to":            "OpenID Provider",
+		"response_type": responseType,
+		"client_id":     clientID,
+		"scope":         scope,
+		"has_nonce":     nonce != "",
+		"has_pkce":      codeChallenge != "",
+	}, lookingglass.Annotation{
+		Type:        lookingglass.AnnotationTypeExplanation,
+		Title:       "OpenID Connect Authentication",
+		Description: "OIDC extends OAuth 2.0 with identity verification. The openid scope is required.",
+		Reference:   "OpenID Connect Core 1.0 Section 3.1.2",
+	})
+
 	// Validate openid scope is present
 	if !strings.Contains(scope, "openid") {
+		p.emitEvent(sessionID, lookingglass.EventTypeSecurityWarning, "Missing openid Scope", map[string]interface{}{
+			"scope": scope,
+		}, lookingglass.Annotation{
+			Type:        lookingglass.AnnotationTypeSecurityHint,
+			Title:       "openid Scope Required",
+			Description: "The 'openid' scope is mandatory for OIDC flows to receive an ID token",
+			Severity:    "error",
+		})
 		writeOIDCError(w, http.StatusBadRequest, "invalid_scope", "openid scope is required for OIDC")
 		return
+	}
+
+	// Emit nonce presence check
+	if nonce != "" {
+		p.emitEvent(sessionID, lookingglass.EventTypeSecurityInfo, "Nonce Parameter Present", map[string]interface{}{
+			"nonce_length": len(nonce),
+		}, lookingglass.Annotation{
+			Type:        lookingglass.AnnotationTypeBestPractice,
+			Title:       "Nonce for Replay Protection",
+			Description: "The nonce binds the ID token to the client session, preventing replay attacks",
+			Reference:   "OpenID Connect Core 1.0 Section 3.1.2.1",
+		})
 	}
 
 	// Validate required parameters
@@ -152,6 +208,8 @@ func (p *Plugin) handleAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
 
 // handleToken handles OIDC token requests
 func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
+	sessionID := p.getSessionFromRequest(r)
+	
 	if err := r.ParseForm(); err != nil {
 		writeOIDCError(w, http.StatusBadRequest, "invalid_request", "Invalid form data")
 		return
@@ -159,17 +217,26 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 
 	grantType := r.FormValue("grant_type")
 
+	// Emit token request event
+	p.emitEvent(sessionID, lookingglass.EventTypeRequestSent, "OIDC Token Request", map[string]interface{}{
+		"grant_type": grantType,
+		"endpoint":   "/oidc/token",
+	})
+
 	switch grantType {
 	case "authorization_code":
-		p.handleAuthorizationCodeGrant(w, r)
+		p.handleAuthorizationCodeGrant(w, r, sessionID)
 	case "refresh_token":
-		p.handleRefreshTokenGrant(w, r)
+		p.handleRefreshTokenGrant(w, r, sessionID)
 	default:
+		p.emitEvent(sessionID, lookingglass.EventTypeSecurityWarning, "Unsupported Grant Type", map[string]interface{}{
+			"grant_type": grantType,
+		})
 		writeOIDCError(w, http.StatusBadRequest, "unsupported_grant_type", "Grant type not supported")
 	}
 }
 
-func (p *Plugin) handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request) {
+func (p *Plugin) handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, sessionID string) {
 	code := r.FormValue("code")
 	redirectURI := r.FormValue("redirect_uri")
 	clientID := r.FormValue("client_id")
@@ -181,15 +248,35 @@ func (p *Plugin) handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Req
 		clientID, clientSecret, _ = r.BasicAuth()
 	}
 
+	// Emit token exchange request
+	p.emitEvent(sessionID, lookingglass.EventTypeFlowStep, "OIDC Token Exchange", map[string]interface{}{
+		"step":         6,
+		"from":         "Client",
+		"to":           "OpenID Provider",
+		"grant_type":   "authorization_code",
+		"has_verifier": codeVerifier != "",
+	}, lookingglass.Annotation{
+		Type:        lookingglass.AnnotationTypeExplanation,
+		Title:       "OIDC Token Request",
+		Description: "The client exchanges the authorization code for tokens, including the ID token with identity claims",
+		Reference:   "OpenID Connect Core 1.0 Section 3.1.3",
+	})
+
 	// Validate client
 	client, exists := p.mockIdP.GetClient(clientID)
 	if !exists {
+		p.emitEvent(sessionID, lookingglass.EventTypeSecurityWarning, "Unknown Client", map[string]interface{}{
+			"client_id": clientID,
+		})
 		writeOIDCError(w, http.StatusUnauthorized, "invalid_client", "Unknown client")
 		return
 	}
 
 	if !client.Public {
 		if _, err := p.mockIdP.ValidateClient(clientID, clientSecret); err != nil {
+			p.emitEvent(sessionID, lookingglass.EventTypeSecurityWarning, "Client Auth Failed", map[string]interface{}{
+				"client_id": clientID,
+			})
 			writeOIDCError(w, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
 			return
 		}
@@ -198,6 +285,9 @@ func (p *Plugin) handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Req
 	// Validate authorization code
 	authCode, err := p.mockIdP.ValidateAuthorizationCode(code, clientID, redirectURI, codeVerifier)
 	if err != nil {
+		p.emitEvent(sessionID, lookingglass.EventTypeSecurityWarning, "Code Validation Failed", map[string]interface{}{
+			"error": err.Error(),
+		})
 		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", err.Error())
 		return
 	}
@@ -209,13 +299,44 @@ func (p *Plugin) handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Emit ID token issued event
+	p.emitEvent(sessionID, lookingglass.EventTypeTokenIssued, "OIDC Tokens Issued", map[string]interface{}{
+		"step":         7,
+		"from":         "OpenID Provider",
+		"to":           "Client",
+		"token_type":   "Bearer",
+		"has_id_token": tokenResponse.IDToken != "",
+		"scope":        tokenResponse.Scope,
+		"expires_in":   tokenResponse.ExpiresIn,
+	}, lookingglass.Annotation{
+		Type:        lookingglass.AnnotationTypeExplanation,
+		Title:       "ID Token Issued",
+		Description: "The ID token is a JWT containing claims about the authenticated user. It must be validated before use.",
+		Reference:   "OpenID Connect Core 1.0 Section 2",
+	})
+
+	// Emit ID token validation reminder
+	if tokenResponse.IDToken != "" {
+		p.emitEvent(sessionID, lookingglass.EventTypeFlowStep, "ID Token Validation Required", map[string]interface{}{
+			"step":              8,
+			"from":              "Client",
+			"to":                "Client",
+			"validation_steps":  []string{"Verify signature", "Check iss", "Check aud", "Check exp", "Verify nonce"},
+		}, lookingglass.Annotation{
+			Type:        lookingglass.AnnotationTypeBestPractice,
+			Title:       "ID Token Validation Steps",
+			Description: "Always validate: signature using JWKS, issuer (iss), audience (aud), expiration (exp), and nonce if present",
+			Reference:   "OpenID Connect Core 1.0 Section 3.1.3.7",
+		})
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
 	json.NewEncoder(w).Encode(tokenResponse)
 }
 
-func (p *Plugin) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request) {
+func (p *Plugin) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request, sessionID string) {
 	refreshToken := r.FormValue("refresh_token")
 	clientID := r.FormValue("client_id")
 	clientSecret := r.FormValue("client_secret")
@@ -225,6 +346,17 @@ func (p *Plugin) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request)
 	if clientID == "" {
 		clientID, clientSecret, _ = r.BasicAuth()
 	}
+
+	// Emit refresh request
+	p.emitEvent(sessionID, lookingglass.EventTypeFlowStep, "OIDC Token Refresh", map[string]interface{}{
+		"grant_type": "refresh_token",
+		"client_id":  clientID,
+		"scope":      scope,
+	}, lookingglass.Annotation{
+		Type:        lookingglass.AnnotationTypeExplanation,
+		Title:       "Token Refresh with OIDC",
+		Description: "Refreshing tokens in OIDC can also issue a new ID token if openid scope is present",
+	})
 
 	// Validate client
 	client, exists := p.mockIdP.GetClient(clientID)
@@ -243,6 +375,9 @@ func (p *Plugin) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request)
 	// Validate refresh token
 	rt, err := p.mockIdP.ValidateRefreshToken(refreshToken, clientID)
 	if err != nil {
+		p.emitEvent(sessionID, lookingglass.EventTypeSecurityWarning, "Refresh Token Invalid", map[string]interface{}{
+			"error": err.Error(),
+		})
 		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", err.Error())
 		return
 	}
@@ -315,6 +450,12 @@ func (p *Plugin) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request)
 			response.IDToken = idToken
 		}
 	}
+
+	// Emit token refresh success
+	p.emitEvent(sessionID, lookingglass.EventTypeTokenIssued, "OIDC Tokens Refreshed", map[string]interface{}{
+		"has_id_token":   response.IDToken != "",
+		"token_rotation": true,
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")

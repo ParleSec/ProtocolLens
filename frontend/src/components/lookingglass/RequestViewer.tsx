@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   ChevronDown, ChevronRight, Copy, Check, 
-  ArrowUp, ArrowDown, Clock, Globe
+  ArrowUp, ArrowDown, Clock, Globe, Terminal,
+  AlertTriangle, CheckCircle
 } from 'lucide-react'
 
 interface RequestViewerProps {
@@ -17,11 +18,57 @@ interface RequestViewerProps {
     body?: string | object | null | undefined
   }
   duration?: number
+  /** Show cURL equivalent */
+  showCurl?: boolean
+  /** Highlight security-relevant headers */
+  highlightSecurity?: boolean
 }
 
-export function RequestViewer({ method, url, headers, body, response, duration }: RequestViewerProps) {
+// Security-relevant headers to highlight
+const SECURITY_HEADERS = [
+  'authorization', 'x-csrf-token', 'x-xsrf-token', 'content-security-policy',
+  'strict-transport-security', 'x-content-type-options', 'x-frame-options',
+  'cache-control', 'pragma', 'www-authenticate', 'set-cookie'
+]
+
+export function RequestViewer({ 
+  method, 
+  url, 
+  headers, 
+  body, 
+  response, 
+  duration,
+  showCurl = true,
+  highlightSecurity = true
+}: RequestViewerProps) {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['request']))
   const [copied, setCopied] = useState<string | null>(null)
+
+  // Generate cURL equivalent
+  const curlCommand = useMemo(() => {
+    let curl = `curl -X ${method.toUpperCase()} '${url}'`
+    
+    if (headers) {
+      Object.entries(headers).forEach(([key, value]) => {
+        // Mask authorization header values for security
+        const displayValue = key.toLowerCase() === 'authorization' 
+          ? value.replace(/Bearer .+/, 'Bearer <TOKEN>')
+          : value
+        curl += ` \\\n  -H '${key}: ${displayValue}'`
+      })
+    }
+    
+    if (body) {
+      const bodyStr = typeof body === 'string' ? body : JSON.stringify(body)
+      curl += ` \\\n  -d '${bodyStr}'`
+    }
+    
+    return curl
+  }, [method, url, headers, body])
+
+  // Check if a header is security-relevant
+  const isSecurityHeader = (key: string) => 
+    highlightSecurity && SECURITY_HEADERS.includes(key.toLowerCase())
 
   const toggleSection = (section: string) => {
     const newExpanded = new Set(expandedSections)
@@ -115,12 +162,44 @@ export function RequestViewer({ method, url, headers, body, response, duration }
             </div>
             <div className="space-y-1">
               {Object.entries(headers).map(([key, value]) => (
-                <div key={key} className="flex gap-2 text-xs font-mono">
-                  <span className="text-cyan-400">{key}:</span>
+                <div key={key} className={`flex gap-2 text-xs font-mono p-1.5 rounded ${
+                  isSecurityHeader(key) ? 'bg-yellow-500/10 border border-yellow-500/20' : ''
+                }`}>
+                  <span className={isSecurityHeader(key) ? 'text-yellow-400' : 'text-cyan-400'}>
+                    {key}:
+                  </span>
                   <span className="text-surface-300 break-all">{value}</span>
+                  {isSecurityHeader(key) && (
+                    <span title="Security-relevant header">
+                      <AlertTriangle className="w-3 h-3 text-yellow-400 flex-shrink-0" />
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
+          </div>
+        )}
+        
+        {/* cURL Command */}
+        {showCurl && (
+          <div className="mt-4">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-xs font-semibold text-surface-500 uppercase tracking-wider flex items-center gap-1.5">
+                <Terminal className="w-3.5 h-3.5" />
+                cURL Equivalent
+              </h4>
+              <button
+                onClick={() => copyToClipboard(curlCommand, 'curl')}
+                className="text-xs text-surface-500 hover:text-white transition-colors"
+              >
+                {copied === 'curl' ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+            <pre className="p-3 rounded-lg bg-black/30 overflow-x-auto">
+              <code className="text-xs text-green-400 font-mono whitespace-pre">
+                {curlCommand}
+              </code>
+            </pre>
           </div>
         )}
 
@@ -153,13 +232,26 @@ export function RequestViewer({ method, url, headers, body, response, duration }
           isExpanded={expandedSections.has('response')}
           onToggle={() => toggleSection('response')}
         >
-          {/* Status */}
-          <div className="mb-4 flex items-center gap-2">
-            <Globe className="w-4 h-4 text-surface-500" />
-            <span className={`font-medium ${getStatusColor(response.status)}`}>
-              {response.status}
-            </span>
-            <span className="text-surface-400">{response.statusText}</span>
+          {/* Status with visual indicator */}
+          <div className="mb-4 p-3 rounded-lg bg-surface-800/50 flex items-center gap-3">
+            {response.status >= 200 && response.status < 300 ? (
+              <CheckCircle className="w-5 h-5 text-green-400" />
+            ) : response.status >= 400 ? (
+              <AlertTriangle className="w-5 h-5 text-red-400" />
+            ) : (
+              <Globe className="w-5 h-5 text-yellow-400" />
+            )}
+            <div>
+              <span className={`text-lg font-bold ${getStatusColor(response.status)}`}>
+                {response.status}
+              </span>
+              <span className="text-surface-400 ml-2">{response.statusText}</span>
+            </div>
+            {duration && (
+              <span className="ml-auto text-xs text-surface-500">
+                {duration}ms
+              </span>
+            )}
           </div>
 
           {/* Headers */}
@@ -176,9 +268,18 @@ export function RequestViewer({ method, url, headers, body, response, duration }
               </div>
               <div className="space-y-1">
                 {Object.entries(response.headers).map(([key, value]) => (
-                  <div key={key} className="flex gap-2 text-xs font-mono">
-                    <span className="text-cyan-400">{key}:</span>
+                  <div key={key} className={`flex gap-2 text-xs font-mono p-1.5 rounded ${
+                    isSecurityHeader(key) ? 'bg-yellow-500/10 border border-yellow-500/20' : ''
+                  }`}>
+                    <span className={isSecurityHeader(key) ? 'text-yellow-400' : 'text-cyan-400'}>
+                      {key}:
+                    </span>
                     <span className="text-surface-300 break-all">{value}</span>
+                    {isSecurityHeader(key) && (
+                      <span title="Security-relevant header">
+                        <AlertTriangle className="w-3 h-3 text-yellow-400 flex-shrink-0" />
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
