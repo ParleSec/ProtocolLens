@@ -1,0 +1,452 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+# Set default permissions to read-only for security
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: '1.22'
+  NODE_VERSION: '20'
+
+jobs:
+  # Job 1: Frontend Security Scanning
+  frontend-security-scan:
+    name: Frontend Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci --legacy-peer-deps
+      
+      - name: Run npm audit
+        working-directory: frontend
+        run: npm audit --audit-level=high
+        continue-on-error: false
+      
+      - name: Run Snyk Security Scan (Frontend)
+        uses: snyk/actions/node@0.4.0
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high --sarif-file-output=snyk-frontend.sarif
+          file: frontend/package.json
+      
+      - name: Check if Frontend SARIF file exists
+        id: check_frontend_sarif
+        run: |
+          if [ -f snyk-frontend.sarif ]; then
+            echo "sarif_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "sarif_exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Frontend SARIF file not generated. Snyk scan may have failed or SNYK_TOKEN not configured."
+          fi
+        shell: bash
+      
+      - name: Upload Frontend Snyk results to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: steps.check_frontend_sarif.outputs.sarif_exists == 'true'
+        continue-on-error: true
+        with:
+          sarif_file: snyk-frontend.sarif
+          category: frontend-security
+
+  # Job 2: Backend Security Scanning
+  backend-security-scan:
+    name: Backend Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: backend/go.sum
+      
+      - name: Download Go dependencies
+        working-directory: backend
+        run: go mod download
+      
+      - name: Run Snyk Security Scan (Backend)
+        uses: snyk/actions/golang@0.4.0
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high --sarif-file-output=snyk-backend.sarif
+          file: backend/go.mod
+      
+      - name: Check if Backend SARIF file exists
+        id: check_backend_sarif
+        run: |
+          if [ -f snyk-backend.sarif ]; then
+            echo "sarif_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "sarif_exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Backend SARIF file not generated. Snyk scan may have failed or SNYK_TOKEN not configured."
+          fi
+        shell: bash
+      
+      - name: Upload Backend Snyk results to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: steps.check_backend_sarif.outputs.sarif_exists == 'true'
+        continue-on-error: true
+        with:
+          sarif_file: snyk-backend.sarif
+          category: backend-security
+
+  # Job 3: Snyk Code Analysis (SAST)
+  code-security-scan:
+    name: Code Security Scan (SAST)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run Snyk Code Analysis
+        uses: snyk/actions/node@0.4.0
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: code test
+          args: --sarif-file-output=snyk-code.sarif
+      
+      - name: Check if Code SARIF file exists
+        id: check_code_sarif
+        run: |
+          if [ -f snyk-code.sarif ]; then
+            echo "sarif_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "sarif_exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Code SARIF file not generated. Snyk Code scan may have failed."
+          fi
+        shell: bash
+      
+      - name: Upload Snyk Code results to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: steps.check_code_sarif.outputs.sarif_exists == 'true'
+        continue-on-error: true
+        with:
+          sarif_file: snyk-code.sarif
+          category: code-security
+
+  # Job 4: Frontend Linting and Type Checking
+  frontend-lint-and-typecheck:
+    name: Frontend Lint & Type Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci --legacy-peer-deps
+      
+      - name: Run TypeScript type check
+        working-directory: frontend
+        run: npx tsc --noEmit
+      
+      - name: Check if ESLint is configured
+        id: eslint_check
+        working-directory: frontend
+        run: |
+          if npm run lint --dry-run 2>/dev/null; then
+            echo "eslint_available=true" >> $GITHUB_OUTPUT
+          else
+            echo "eslint_available=false" >> $GITHUB_OUTPUT
+            echo "⚠️ ESLint not configured. Consider adding ESLint to improve code quality."
+          fi
+        continue-on-error: true
+      
+      - name: Run ESLint
+        if: steps.eslint_check.outputs.eslint_available == 'true'
+        working-directory: frontend
+        run: npm run lint
+        continue-on-error: false
+
+  # Job 5: Backend Linting and Vet
+  backend-lint:
+    name: Backend Lint & Vet
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: backend/go.sum
+      
+      - name: Download Go dependencies
+        working-directory: backend
+        run: go mod download
+      
+      - name: Run go vet
+        working-directory: backend
+        run: go vet ./...
+      
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          working-directory: backend
+          args: --timeout=5m
+
+  # Job 6: Backend Tests
+  backend-test:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: backend/go.sum
+      
+      - name: Download Go dependencies
+        working-directory: backend
+        run: go mod download
+      
+      - name: Check for test files
+        id: check_tests
+        working-directory: backend
+        run: |
+          if find . -name "*_test.go" -type f | grep -q .; then
+            echo "tests_exist=true" >> $GITHUB_OUTPUT
+          else
+            echo "tests_exist=false" >> $GITHUB_OUTPUT
+            echo "⚠️ No test files found. Consider adding tests to improve code quality."
+          fi
+      
+      - name: Run Go tests
+        if: steps.check_tests.outputs.tests_exist == 'true'
+        working-directory: backend
+        run: go test -v -race -coverprofile=coverage.out ./...
+      
+      - name: Upload coverage report
+        if: steps.check_tests.outputs.tests_exist == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.out
+          retention-days: 7
+
+  # Job 7: Build Frontend
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    needs: [frontend-security-scan, frontend-lint-and-typecheck]
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci --legacy-peer-deps
+      
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+        env:
+          CI: true
+      
+      - name: Upload frontend build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 7
+
+  # Job 8: Build Backend
+  build-backend:
+    name: Build Backend
+    runs-on: ubuntu-latest
+    needs: [backend-security-scan, backend-lint, backend-test]
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: backend/go.sum
+      
+      - name: Download Go dependencies
+        working-directory: backend
+        run: go mod download
+      
+      - name: Build backend binary
+        working-directory: backend
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o server ./cmd/server
+      
+      - name: Upload backend build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-binary
+          path: backend/server
+          retention-days: 7
+
+  # Job 9: Docker Build Test
+  docker-build-test:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+    needs: [build-frontend, build-backend]
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Build Docker image (test)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.fly
+          push: false
+          tags: protocolsoup:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Job 10: Deploy to Fly.io (only on main branch)
+  deploy:
+    name: Deploy to Fly.io
+    runs-on: ubuntu-latest
+    needs: [docker-build-test, code-security-scan]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Fly.io CLI
+        uses: superfly/flyctl-actions/setup-flyctl@1.5
+      
+      - name: Deploy to Fly.io
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      
+      - name: Deployment notification
+        if: success()
+        run: echo "✅ Deployment to Fly.io successful!"
+
+  # Job 11: Lighthouse Performance Test (runs after deploy)
+  lighthouse:
+    name: Lighthouse Performance Audit
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Wait for deployment to be ready
+        run: sleep 30
+      
+      - name: Run Lighthouse CI
+        uses: treosh/lighthouse-ci-action@v11
+        with:
+          urls: |
+            https://protocolsoup.com
+            https://protocolsoup.com/protocols
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+
+  # Job 12: Cleanup artifacts on PR close
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    permissions:
+      actions: write
+    
+    steps:
+      - name: Delete PR artifacts
+        uses: geekyeggo/delete-artifact@v4
+        with:
+          name: |
+            frontend-dist
+            backend-binary
+            backend-coverage
+
