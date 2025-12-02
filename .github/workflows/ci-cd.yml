@@ -190,23 +190,9 @@ jobs:
         working-directory: frontend
         run: npx tsc --noEmit
       
-      - name: Check if ESLint is configured
-        id: eslint_check
-        working-directory: frontend
-        run: |
-          if npm run lint --dry-run 2>/dev/null; then
-            echo "eslint_available=true" >> $GITHUB_OUTPUT
-          else
-            echo "eslint_available=false" >> $GITHUB_OUTPUT
-            echo "⚠️ ESLint not configured. Consider adding ESLint to improve code quality."
-          fi
-        continue-on-error: true
-      
       - name: Run ESLint
-        if: steps.eslint_check.outputs.eslint_available == 'true'
         working-directory: frontend
         run: npm run lint
-        continue-on-error: false
 
   # Job 5: Backend Linting and Vet
   backend-lint:
