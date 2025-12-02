@@ -220,11 +220,10 @@ jobs:
         run: go vet ./...
       
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v6
         with:
           version: latest
           working-directory: backend
-          args: --timeout=5m
 
   # Job 6: Backend Tests
   backend-test:

@@ -227,7 +227,7 @@ func (c *Client) handleMessage(message []byte) {
 type EventBroadcaster struct {
 	engine    *Engine
 	sessionID string
-	mu        sync.RWMutex
+	mu        sync.RWMutex //nolint:unused // Reserved for future thread-safe event batching
 }
 
 // NewEventBroadcaster creates a broadcaster for a specific session

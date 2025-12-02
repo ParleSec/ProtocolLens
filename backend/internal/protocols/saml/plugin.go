@@ -112,6 +112,9 @@ func (p *Plugin) RegisterRoutes(router chi.Router) {
 	router.Get("/login", p.handleSPInitiatedLogin)
 	router.Post("/login", p.handleSPInitiatedLoginSubmit)
 
+	// IdP-initiated SSO
+	router.Get("/idp-initiated", p.handleIdPInitiatedSSO)
+
 	// Demo/utility endpoints
 	router.Get("/demo/users", p.handleListUsers)
 	router.Get("/demo/sessions", p.handleListSessions)

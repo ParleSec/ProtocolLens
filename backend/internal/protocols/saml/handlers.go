@@ -849,6 +849,7 @@ func (p *Plugin) processACSResponse(w http.ResponseWriter, r *http.Request, xmlD
 // Single Logout Service
 // ============================================================================
 
+// sloManager handles Single Logout state tracking for multi-SP logout coordination
 var sloManager = NewSLOManager()
 
 // handleSLO handles logout requests via HTTP-Redirect binding
@@ -896,6 +897,17 @@ func (p *Plugin) processSLO(w http.ResponseWriter, r *http.Request, xmlData []by
 
 // handleLogoutRequest processes a LogoutRequest
 func (p *Plugin) handleLogoutRequest(w http.ResponseWriter, r *http.Request, requestInfo *LogoutRequestInfo, relayState string, bindingType BindingType) {
+	// Track this SLO operation
+	sloState := NewSLOState(
+		requestInfo.ID,
+		requestInfo.Issuer,
+		requestInfo.NameID,
+		requestInfo.NameIDFormat,
+		requestInfo.SessionIndexes,
+		relayState,
+	)
+	sloManager.StartSLO(sloState)
+
 	// Find sessions for this user
 	sessions := p.GetSessionsByNameID(requestInfo.NameID)
 	
@@ -903,6 +915,10 @@ func (p *Plugin) handleLogoutRequest(w http.ResponseWriter, r *http.Request, req
 	for _, session := range sessions {
 		p.DeleteSession(session.ID)
 	}
+	
+	// Mark SLO as complete (single SP scenario - in multi-SP, we'd propagate to other SPs first)
+	sloState.Complete = true
+	sloState.Success = true
 	
 	// Emit Looking Glass events with full logout capture
 	if p.lookingGlass != nil {
@@ -980,6 +996,21 @@ func (p *Plugin) handleLogoutRequest(w http.ResponseWriter, r *http.Request, req
 
 // handleLogoutResponse processes a LogoutResponse
 func (p *Plugin) handleLogoutResponse(w http.ResponseWriter, r *http.Request, responseInfo *LogoutResponseInfo, relayState string, bindingType BindingType) {
+	// Update SLO state if this is a response to a tracked logout operation
+	var sloComplete, sloSuccess bool
+	var sloPending, sloFailed int
+	if sloState, err := sloManager.HandleLogoutResponse(responseInfo); err == nil && sloState != nil {
+		sloComplete, sloSuccess, sloPending, sloFailed = sloState.GetStatus()
+		
+		// Clean up completed SLO operations
+		if sloComplete {
+			sloManager.CompleteSLO(responseInfo.InResponseTo)
+		}
+	}
+
+	// Get human-readable status description
+	statusDescription := getStatusDescription(responseInfo.StatusCode)
+
 	// Emit Looking Glass events with full logout response capture
 	if p.lookingGlass != nil {
 		sessionID := r.URL.Query().Get("session_id")
@@ -1002,28 +1033,36 @@ func (p *Plugin) handleLogoutResponse(w http.ResponseWriter, r *http.Request, re
 				},
 			)
 			
-			// Emit status information
+			// Emit status information with description
 			broadcaster.Emit(
 				lookingglass.EventTypeFlowStep,
 				"Logout Status",
 				map[string]interface{}{
-					"success":       responseInfo.Success,
-					"statusCode":    responseInfo.StatusCode,
-					"statusMessage": responseInfo.StatusMessage,
-					"relayState":    relayState,
+					"success":           responseInfo.Success,
+					"statusCode":        responseInfo.StatusCode,
+					"statusDescription": statusDescription,
+					"statusMessage":     responseInfo.StatusMessage,
+					"relayState":        relayState,
+					"sloComplete":       sloComplete,
+					"sloSuccess":        sloSuccess,
+					"sloPendingSPs":     sloPending,
+					"sloFailedSPs":      sloFailed,
 				},
 			)
 		}
 	}
 	
-	// Return success
+	// Return success with detailed status
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":       responseInfo.Success,
-		"response_id":   responseInfo.ID,
-		"in_response_to": responseInfo.InResponseTo,
-		"status_code":   responseInfo.StatusCode,
-		"relay_state":   relayState,
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":            responseInfo.Success,
+		"response_id":        responseInfo.ID,
+		"in_response_to":     responseInfo.InResponseTo,
+		"status_code":        responseInfo.StatusCode,
+		"status_description": statusDescription,
+		"relay_state":        relayState,
+		"slo_complete":       sloComplete,
+		"slo_success":        sloSuccess,
 	})
 }
 
@@ -1220,7 +1259,7 @@ func sanitizeRelayState(relayState string) string {
 	return html.EscapeString(relayState)
 }
 
-// Helper to get error description for SAML status
+// getStatusDescription returns a human-readable description for SAML status codes
 func getStatusDescription(statusCode string) string {
 	descriptions := map[string]string{
 		StatusSuccess:                "The request succeeded",
