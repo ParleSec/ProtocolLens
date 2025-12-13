@@ -410,4 +410,3 @@ func writeAuthError(w http.ResponseWriter, code, description string) {
 		Description: description,
 	})
 }
-

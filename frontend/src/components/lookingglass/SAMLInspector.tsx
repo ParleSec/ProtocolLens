@@ -526,3 +526,4 @@ function formatAttributeName(name: string): string {
 
 export default SAMLInspector
 
+

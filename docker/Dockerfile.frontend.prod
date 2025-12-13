@@ -30,3 +30,4 @@ COPY --from=builder /app/dist ./dist
 # Create a script to copy files to the volume
 CMD ["sh", "-c", "cp -r /app/dist/* /app/dist/"]
 
+

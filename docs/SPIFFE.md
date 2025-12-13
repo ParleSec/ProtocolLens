@@ -288,10 +288,66 @@ backend/internal/
 
 ## Security Considerations
 
-1. **Join Token Security**: Join tokens are single-use and short-lived (10 minutes)
-2. **SVID TTL**: X.509-SVIDs have 1-hour TTL with automatic rotation
+1. **Join Token Security**: Join tokens are single-use and short-lived (default 10 minutes, we use 24 hours for convenience)
+2. **SVID TTL**: X.509-SVIDs have 24-hour TTL with automatic rotation
 3. **Insecure Bootstrap**: Demo uses insecure bootstrap for simplicity; production should use trust bundle
 4. **Unix Attestation**: Uses `unix:uid:0` selector; production should use more specific selectors
+
+## Production Maintenance (Fly.io)
+
+### CA and Credential Lifetimes
+
+The SPIRE Server is configured with extended TTLs for demo stability:
+- **CA TTL**: 90 days (2160 hours) - The server CA rotates every 90 days
+- **X.509-SVID TTL**: 24 hours - Automatically renewed by the agent
+- **JWT-SVID TTL**: 1 hour - Short-lived for security
+
+### When Manual Intervention is Needed
+
+You **should not** need to regenerate tokens if:
+- The site is accessed at least once every 60 days (agent data stays fresh)
+- The app restarts normally (uses cached identity)
+
+You **will** need to regenerate a join token if:
+- The site is idle for 60+ days AND the machine restarts
+- You clear the agent's persistent volume
+- You scale from 1 to 2+ machines (each needs its own token)
+
+### Regenerating Join Token
+
+```bash
+# 1. Generate new token on SPIRE Server (24 hour TTL)
+fly ssh console -a protocolsoup-spire -C "/opt/spire/bin/spire-server token generate -socketPath /run/spire/sockets/server.sock -spiffeID spiffe://protocolsoup.com/agent/main -ttl 86400"
+
+# 2. Update the secret (this will restart the app)
+fly secrets set SPIRE_JOIN_TOKEN=<new-token> -a protocolsoup
+
+# 3. Register the backend workload with the new agent
+fly ssh console -a protocolsoup-spire -C "/opt/spire/bin/spire-server entry create -socketPath /run/spire/sockets/server.sock -spiffeID spiffe://protocolsoup.com/workload/backend -parentID spiffe://protocolsoup.com/spire/agent/join_token/<new-token> -selector unix:uid:0"
+
+# 4. Restart the main app to pick up the new registration
+fly machines restart -a protocolsoup <machine-id>
+```
+
+### Checking SPIFFE Health
+
+```bash
+# Check status via API
+curl https://protocolsoup.com/spiffe/status
+
+# Check agent logs
+fly logs -a protocolsoup | grep -i spire
+
+# Check server logs  
+fly logs -a protocolsoup-spire
+```
+
+### Scaling Considerations
+
+SPIRE join tokens are **single-use**. If you need multiple machines:
+1. Keep to 1 machine (recommended for demo apps)
+2. Or generate separate tokens for each machine before scaling
+3. Or implement a different attestation method (aws_iid, x509pop, etc.)
 
 ## References
 

@@ -18,3 +18,4 @@ RUN chmod +x /opt/spire/bin/register-workloads.sh && \
 
 ENTRYPOINT ["/opt/spire/bin/register-workloads.sh"]
 
+

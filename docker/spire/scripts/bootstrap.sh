@@ -146,3 +146,4 @@ echo "  docker compose -f docker-compose.spire.yml exec spire-agent \\"
 echo "      /opt/spire/bin/spire-agent healthcheck -socketPath /run/spire/sockets/agent.sock"
 echo ""
 
+

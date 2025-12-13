@@ -42,3 +42,4 @@ else
     echo "Install go-spiffe tools or use the SDK to fetch SVIDs"
 fi
 
+

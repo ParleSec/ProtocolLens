@@ -79,3 +79,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
 # Run supervisor
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
 
+

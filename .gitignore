@@ -53,3 +53,6 @@ tmp/
 temp/
 .tmp/
 
+# SPIFFE bootstrap private keys (stored in Fly secrets)
+docker/spire/server-fly/bootstrap-ca.key
+docker/spire/server-fly/bootstrap-agent.key

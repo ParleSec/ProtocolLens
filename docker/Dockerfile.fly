@@ -1,6 +1,6 @@
 # Fly.io Dockerfile - Combined frontend + backend + SPIRE Agent
 # This creates a single container that serves both the API, static frontend,
-# and includes a SPIRE Agent for workload identity.
+# and includes a SPIRE Agent for workload identity with resilient attestation.
 
 # ============================================
 # Stage 1: Build Frontend
@@ -75,6 +75,9 @@ RUN mkdir -p /opt/spire/conf/agent /opt/spire/data/agent /run/spire/sockets /var
 COPY docker/fly/agent.conf /opt/spire/conf/agent/agent.conf
 COPY docker/fly/start-agent.sh /opt/spire/bin/start-agent.sh
 COPY docker/fly/supervisord.conf /etc/supervisord.conf
+
+# Copy bootstrap agent certificate for x509pop attestation (key comes from Fly secrets)
+COPY docker/spire/server-fly/bootstrap-agent.crt /opt/spire/conf/agent/bootstrap-agent.crt
 
 # Fix line endings and permissions
 RUN chmod +x /opt/spire/bin/start-agent.sh && \

@@ -3,6 +3,8 @@
 # - TCP-based API (for Fly private networking)
 # - HTTP health endpoint
 # - Persistent data storage
+# - Extended CA TTL (90 days) for demo stability
+# - x509pop attestation support for agent resilience
 
 FROM ghcr.io/spiffe/spire-server:1.9.6 AS spire-base
 
@@ -15,7 +17,7 @@ RUN CGO_ENABLED=0 go build -o health-server health-server.go
 # Final production image
 FROM alpine:3.19
 LABEL authors="ProtocolLens"
-LABEL description="SPIRE Server for Fly.io production"
+LABEL description="SPIRE Server for Fly.io production with extended CA TTL"
 
 RUN apk add --no-cache ca-certificates supervisor
 
@@ -34,6 +36,9 @@ RUN mkdir -p /opt/spire/data/server /opt/spire/conf/server /run/spire/sockets /v
 # Copy configuration files
 COPY docker/spire/server-fly/server.conf /opt/spire/conf/server/server.conf
 COPY docker/spire/server-fly/supervisord.conf /etc/supervisord.conf
+
+# Copy pre-generated bootstrap CA for x509pop attestation (valid until 2035)
+COPY docker/spire/server-fly/bootstrap-ca.crt /opt/spire/conf/server/bootstrap-ca.crt
 
 # Expose ports
 # 8081 - SPIRE Server API (TCP, for agents)
