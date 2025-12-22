@@ -1305,6 +1305,417 @@ export const fallbackFlows: Record<string, FlowData> = {
       },
     ]
   },
+
+  // ============================================================================
+  // SCIM 2.0 Flows (RFC 7642, 7643, 7644)
+  // ============================================================================
+
+  'scim_user_lifecycle': {
+    title: "User Lifecycle Management",
+    description: "Complete CRUD operations for user resources. Enables IdPs like Okta and Azure AD to provision, update, and deprovision users automatically.",
+    steps: [
+      {
+        order: 1,
+        name: "Check User Exists",
+        description: "IdP queries for existing user by email/userName before creating.",
+        from: "Identity Provider",
+        to: "SCIM Server",
+        type: "request",
+        parameters: {
+          method: "GET",
+          endpoint: '/Users?filter=userName eq "user@example.com"',
+          Authorization: "Bearer {api_token}",
+          Accept: "application/scim+json",
+        },
+      },
+      {
+        order: 2,
+        name: "Filter Response",
+        description: "Server returns matching users (empty if none found).",
+        from: "SCIM Server",
+        to: "Identity Provider",
+        type: "response",
+        parameters: {
+          totalResults: "0 if new user, 1+ if exists",
+          Resources: "Array of matching User objects",
+          schemas: "urn:ietf:params:scim:api:messages:2.0:ListResponse",
+        },
+      },
+      {
+        order: 3,
+        name: "Create User",
+        description: "IdP creates new user if not found (POST) or updates if exists (PUT/PATCH).",
+        from: "Identity Provider",
+        to: "SCIM Server",
+        type: "request",
+        parameters: {
+          method: "POST /Users (create) or PATCH /Users/{id} (update)",
+          schemas: "urn:ietf:params:scim:schemas:core:2.0:User",
+          userName: "Unique identifier (often email)",
+          name: "{ givenName, familyName }",
+          emails: "[{ value, type, primary }]",
+          active: "true/false for account status",
+        },
+      },
+      {
+        order: 4,
+        name: "User Created",
+        description: "Server returns created/updated user with server-assigned id and meta.",
+        from: "SCIM Server",
+        to: "Identity Provider",
+        type: "response",
+        parameters: {
+          id: "Server-assigned unique identifier",
+          meta: "{ resourceType, created, lastModified, version }",
+          Location: "Full URL to resource in header",
+          ETag: "Version identifier for optimistic locking",
+        },
+      },
+      {
+        order: 5,
+        name: "Deactivate User",
+        description: "IdP deactivates user when removed from assignment (PATCH active=false).",
+        from: "Identity Provider",
+        to: "SCIM Server",
+        type: "request",
+        parameters: {
+          method: "PATCH /Users/{id}",
+          Operations: '[{ "op": "replace", "path": "active", "value": false }]',
+          schemas: "urn:ietf:params:scim:api:messages:2.0:PatchOp",
+        },
+      },
+      {
+        order: 6,
+        name: "User Deactivated",
+        description: "Server confirms user deactivation.",
+        from: "SCIM Server",
+        to: "Identity Provider",
+        type: "response",
+        parameters: {
+          active: "false",
+          meta: "Updated lastModified timestamp",
+        },
+      },
+    ]
+  },
+
+  'scim_group_management': {
+    title: "Group Management",
+    description: "Manage groups and their memberships. Enables automatic group sync between IdP and service provider for access control.",
+    steps: [
+      {
+        order: 1,
+        name: "Create Group",
+        description: "IdP creates a group in the service provider.",
+        from: "Identity Provider",
+        to: "SCIM Server",
+        type: "request",
+        parameters: {
+          method: "POST /Groups",
+          schemas: "urn:ietf:params:scim:schemas:core:2.0:Group",
+          displayName: "Group name",
+          members: "Initial members (optional)",
+        },
+      },
+      {
+        order: 2,
+        name: "Group Created",
+        description: "Server returns created group with id.",
+        from: "SCIM Server",
+        to: "Identity Provider",
+        type: "response",
+        parameters: {
+          id: "Server-assigned group ID",
+          displayName: "Group name",
+          meta: "{ resourceType: 'Group', created, lastModified }",
+        },
+      },
+      {
+        order: 3,
+        name: "Add Member",
+        description: "IdP adds a user to the group.",
+        from: "Identity Provider",
+        to: "SCIM Server",
+        type: "request",
+        parameters: {
+          method: "PATCH /Groups/{id}",
+          Operations: '[{ "op": "add", "path": "members", "value": [{ "value": "{userId}" }] }]',
+        },
+      },
+      {
+        order: 4,
+        name: "Member Added",
+        description: "Server confirms membership addition.",
+        from: "SCIM Server",
+        to: "Identity Provider",
+        type: "response",
+        parameters: {
+          members: "Updated member list",
+          meta: "Updated lastModified",
+        },
+      },
+      {
+        order: 5,
+        name: "Remove Member",
+        description: "IdP removes a user from the group.",
+        from: "Identity Provider",
+        to: "SCIM Server",
+        type: "request",
+        parameters: {
+          method: "PATCH /Groups/{id}",
+          Operations: '[{ "op": "remove", "path": "members[value eq \\"{userId}\\"]" }]',
+        },
+      },
+      {
+        order: 6,
+        name: "Member Removed",
+        description: "Server confirms membership removal.",
+        from: "SCIM Server",
+        to: "Identity Provider",
+        type: "response",
+        parameters: {
+          members: "Updated member list without removed user",
+        },
+      },
+    ]
+  },
+
+  'scim_filter_queries': {
+    title: "Filter Queries",
+    description: "RFC 7644 compliant filter syntax for querying SCIM resources. Supports comparison, logical, and grouping operators.",
+    steps: [
+      {
+        order: 1,
+        name: "Simple Filter",
+        description: "Query using basic attribute comparison.",
+        from: "Client",
+        to: "SCIM Server",
+        type: "request",
+        parameters: {
+          method: "GET",
+          endpoint: '/Users?filter=userName eq "john@example.com"',
+          operators: "eq, ne, co, sw, ew, gt, lt, ge, le, pr",
+        },
+      },
+      {
+        order: 2,
+        name: "Filter Results",
+        description: "Server returns matching resources in ListResponse.",
+        from: "SCIM Server",
+        to: "Client",
+        type: "response",
+        parameters: {
+          totalResults: "Total matching resources",
+          Resources: "Array of matching resources",
+          startIndex: "1-based pagination start",
+          itemsPerPage: "Number of results returned",
+        },
+      },
+      {
+        order: 3,
+        name: "Complex Filter",
+        description: "Query using logical operators and nested attributes.",
+        from: "Client",
+        to: "SCIM Server",
+        type: "request",
+        parameters: {
+          endpoint: '/Users?filter=emails[type eq "work" and primary eq true]',
+          logical: "and, or, not",
+          grouping: "Parentheses for precedence",
+          nested: "attribute[sub-attribute op value]",
+        },
+      },
+      {
+        order: 4,
+        name: "Paginated Results",
+        description: "Server returns paginated results for large datasets.",
+        from: "SCIM Server",
+        to: "Client",
+        type: "response",
+        parameters: {
+          startIndex: "Requested start position",
+          itemsPerPage: "Actual count returned",
+          totalResults: "Total matching (may require count param)",
+        },
+      },
+      {
+        order: 5,
+        name: "Sorted Results",
+        description: "Request results sorted by attribute.",
+        from: "Client",
+        to: "SCIM Server",
+        type: "request",
+        parameters: {
+          sortBy: "Attribute to sort by",
+          sortOrder: "ascending (default) or descending",
+          endpoint: "/Users?sortBy=name.familyName&sortOrder=descending",
+        },
+      },
+    ]
+  },
+
+  'scim_schema_discovery': {
+    title: "Schema Discovery",
+    description: "Discover SCIM server capabilities, supported schemas, and resource types. Essential for client auto-configuration.",
+    steps: [
+      {
+        order: 1,
+        name: "Get ServiceProviderConfig",
+        description: "Discover server capabilities and supported features.",
+        from: "Client",
+        to: "SCIM Server",
+        type: "request",
+        parameters: {
+          method: "GET /ServiceProviderConfig",
+          purpose: "Discover supported features",
+        },
+      },
+      {
+        order: 2,
+        name: "Server Capabilities",
+        description: "Server returns its configuration and supported features.",
+        from: "SCIM Server",
+        to: "Client",
+        type: "response",
+        parameters: {
+          patch: "{ supported: true/false }",
+          bulk: "{ supported, maxOperations, maxPayloadSize }",
+          filter: "{ supported, maxResults }",
+          changePassword: "{ supported: true/false }",
+          sort: "{ supported: true/false }",
+          etag: "{ supported: true/false }",
+          authenticationSchemes: "Supported auth methods",
+        },
+      },
+      {
+        order: 3,
+        name: "Get Resource Types",
+        description: "Discover available resource types (User, Group, etc.).",
+        from: "Client",
+        to: "SCIM Server",
+        type: "request",
+        parameters: {
+          method: "GET /ResourceTypes",
+          purpose: "List available resource types",
+        },
+      },
+      {
+        order: 4,
+        name: "Resource Types List",
+        description: "Server returns supported resource types with their schemas.",
+        from: "SCIM Server",
+        to: "Client",
+        type: "response",
+        parameters: {
+          id: "User, Group, etc.",
+          name: "Human-readable name",
+          endpoint: "Resource endpoint path",
+          schema: "Core schema URN",
+          schemaExtensions: "Optional extension schemas",
+        },
+      },
+      {
+        order: 5,
+        name: "Get Schemas",
+        description: "Fetch detailed schema definitions.",
+        from: "Client",
+        to: "SCIM Server",
+        type: "request",
+        parameters: {
+          method: "GET /Schemas",
+          or: "GET /Schemas/{schema-urn}",
+        },
+      },
+      {
+        order: 6,
+        name: "Schema Definitions",
+        description: "Server returns complete attribute definitions.",
+        from: "SCIM Server",
+        to: "Client",
+        type: "response",
+        parameters: {
+          attributes: "Array of attribute definitions",
+          name: "Attribute name",
+          type: "string, boolean, complex, etc.",
+          multiValued: "true/false",
+          required: "true/false",
+          mutability: "readWrite, readOnly, immutable, writeOnly",
+        },
+      },
+    ]
+  },
+
+  'scim_bulk_operations': {
+    title: "Bulk Operations",
+    description: "Execute multiple SCIM operations in a single request. Efficient for batch provisioning and large-scale changes.",
+    steps: [
+      {
+        order: 1,
+        name: "Check Bulk Support",
+        description: "Verify server supports bulk operations and limits.",
+        from: "Client",
+        to: "SCIM Server",
+        type: "request",
+        parameters: {
+          method: "GET /ServiceProviderConfig",
+          check: "bulk.supported, bulk.maxOperations, bulk.maxPayloadSize",
+        },
+      },
+      {
+        order: 2,
+        name: "Bulk Capabilities",
+        description: "Server returns bulk operation limits.",
+        from: "SCIM Server",
+        to: "Client",
+        type: "response",
+        parameters: {
+          "bulk.supported": "true",
+          "bulk.maxOperations": "Maximum operations per request",
+          "bulk.maxPayloadSize": "Maximum request size in bytes",
+        },
+      },
+      {
+        order: 3,
+        name: "Bulk Request",
+        description: "Submit multiple operations in single request.",
+        from: "Client",
+        to: "SCIM Server",
+        type: "request",
+        parameters: {
+          method: "POST /Bulk",
+          schemas: "urn:ietf:params:scim:api:messages:2.0:BulkRequest",
+          Operations: "Array of { method, path, bulkId, data }",
+          failOnErrors: "Stop after N errors (optional)",
+        },
+      },
+      {
+        order: 4,
+        name: "Process Operations",
+        description: "Server processes each operation in order.",
+        from: "SCIM Server",
+        to: "SCIM Server",
+        type: "internal",
+        parameters: {
+          order: "Operations processed sequentially",
+          bulkId: "Allows cross-referencing created resources",
+          atomicity: "Not guaranteed - partial success possible",
+        },
+      },
+      {
+        order: 5,
+        name: "Bulk Response",
+        description: "Server returns results for each operation.",
+        from: "SCIM Server",
+        to: "Client",
+        type: "response",
+        parameters: {
+          schemas: "urn:ietf:params:scim:api:messages:2.0:BulkResponse",
+          Operations: "Array of { method, bulkId, status, location, response }",
+          status: "HTTP status code for each operation",
+        },
+      },
+    ]
+  },
 }
 
 /**
@@ -1336,6 +1747,12 @@ export const flowIdMap: Record<string, string> = {
   'jwt-svid-issuance': 'jwt-svid-issuance',
   'mtls-handshake': 'mtls-handshake',
   'certificate-rotation': 'certificate-rotation',
+  // SCIM 2.0 flows
+  'user-lifecycle': 'scim_user_lifecycle',
+  'group-management': 'scim_group_management',
+  'filter-queries': 'scim_filter_queries',
+  'schema-discovery': 'scim_schema_discovery',
+  'bulk-operations': 'scim_bulk_operations',
 }
 
 /**

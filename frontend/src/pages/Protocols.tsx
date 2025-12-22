@@ -6,7 +6,7 @@
 import { Link } from 'react-router-dom'
 import { 
   Key, Fingerprint, FileKey, ChevronRight, 
-  ExternalLink, BookOpen, Shield
+  ExternalLink, BookOpen, Shield, Users
 } from 'lucide-react'
 
 const protocols = [
@@ -71,6 +71,22 @@ const protocols = [
       { id: 'jwt-svid-issuance', name: 'JWT-SVID Acquisition', rfc: 'JWT-SVID' },
       { id: 'mtls-handshake', name: 'mTLS with X.509-SVIDs', rfc: 'RFC 8446' },
       { id: 'certificate-rotation', name: 'Certificate Rotation', rfc: 'Workload API' },
+    ],
+  },
+  {
+    id: 'scim',
+    name: 'SCIM 2.0',
+    description: 'System for Cross-domain Identity Management. Standards-based protocol for automating user provisioning and lifecycle management between identity providers and service providers.',
+    icon: Users,
+    color: 'purple',
+    spec: 'RFC 7642, 7643, 7644',
+    specUrl: 'https://datatracker.ietf.org/doc/html/rfc7644',
+    flows: [
+      { id: 'user-lifecycle', name: 'User Lifecycle', rfc: 'RFC 7644 §3.2-3.6' },
+      { id: 'group-management', name: 'Group Management', rfc: 'RFC 7644 §3.2-3.6' },
+      { id: 'filter-queries', name: 'Filter Queries', rfc: 'RFC 7644 §3.4.2' },
+      { id: 'schema-discovery', name: 'Schema Discovery', rfc: 'RFC 7644 §4' },
+      { id: 'bulk-operations', name: 'Bulk Operations', rfc: 'RFC 7644 §3.7' },
     ],
   },
 ]
@@ -149,6 +165,12 @@ function ProtocolCard({ protocol }: { protocol: typeof protocols[0] }) {
       bg: 'bg-green-500/10',
       text: 'text-green-400',
       tag: 'bg-green-500/10 text-green-300 border-green-500/20',
+    },
+    purple: {
+      border: 'border-purple-500/20',
+      bg: 'bg-purple-500/10',
+      text: 'text-purple-400',
+      tag: 'bg-purple-500/10 text-purple-300 border-purple-500/20',
     },
   }
   const c = colors[protocol.color as keyof typeof colors]

@@ -5,7 +5,7 @@ import {
   ArrowLeft, Eye, ChevronDown, ChevronRight,
   Lock, Key, AlertTriangle, Copy, Check,
   Code, ExternalLink, Loader2, ArrowRight,
-  Fingerprint, Server, Globe, FileKey, Shield
+  Fingerprint, Server, Globe, FileKey, Shield, Users
 } from 'lucide-react'
 import { TokenInspector } from '../components/lookingglass/TokenInspector'
 import { FlowDiagram } from '../components/lookingglass/FlowDiagram'
@@ -311,6 +311,223 @@ go func() {
 // New connections automatically use new certificate`
     }
 
+    // SCIM 2.0 flows
+    if (mappedFlowId === 'scim_user_lifecycle') {
+      return `// SCIM 2.0 User Lifecycle (RFC 7644)
+const SCIM_BASE = 'https://example.com/scim/v2';
+const TOKEN = 'your-bearer-token';
+
+// Check if user exists
+const checkUser = await fetch(
+  \`\${SCIM_BASE}/Users?filter=userName eq "john@example.com"\`,
+  { headers: { 'Authorization': \`Bearer \${TOKEN}\`, 'Accept': 'application/scim+json' } }
+).then(r => r.json());
+
+// Create user if not exists
+if (checkUser.totalResults === 0) {
+  const newUser = await fetch(\`\${SCIM_BASE}/Users\`, {
+    method: 'POST',
+    headers: {
+      'Authorization': \`Bearer \${TOKEN}\`,
+      'Content-Type': 'application/scim+json',
+    },
+    body: JSON.stringify({
+      schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
+      userName: 'john@example.com',
+      name: { givenName: 'John', familyName: 'Doe' },
+      emails: [{ value: 'john@example.com', type: 'work', primary: true }],
+      active: true,
+    }),
+  }).then(r => r.json());
+  console.log('Created user:', newUser.id);
+}
+
+// Deactivate user (PATCH)
+await fetch(\`\${SCIM_BASE}/Users/\${userId}\`, {
+  method: 'PATCH',
+  headers: { 'Authorization': \`Bearer \${TOKEN}\`, 'Content-Type': 'application/scim+json' },
+  body: JSON.stringify({
+    schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+    Operations: [{ op: 'replace', path: 'active', value: false }],
+  }),
+});`
+    }
+
+    if (mappedFlowId === 'scim_group_management') {
+      return `// SCIM 2.0 Group Management (RFC 7644)
+const SCIM_BASE = 'https://example.com/scim/v2';
+const TOKEN = 'your-bearer-token';
+const headers = { 'Authorization': \`Bearer \${TOKEN}\`, 'Content-Type': 'application/scim+json' };
+
+// Create a group
+const group = await fetch(\`\${SCIM_BASE}/Groups\`, {
+  method: 'POST',
+  headers,
+  body: JSON.stringify({
+    schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'],
+    displayName: 'Engineering Team',
+  }),
+}).then(r => r.json());
+
+// Add member to group (PATCH)
+await fetch(\`\${SCIM_BASE}/Groups/\${group.id}\`, {
+  method: 'PATCH',
+  headers,
+  body: JSON.stringify({
+    schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+    Operations: [{
+      op: 'add',
+      path: 'members',
+      value: [{ value: userId }],
+    }],
+  }),
+});
+
+// Remove member from group
+await fetch(\`\${SCIM_BASE}/Groups/\${group.id}\`, {
+  method: 'PATCH',
+  headers,
+  body: JSON.stringify({
+    schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+    Operations: [{
+      op: 'remove',
+      path: \`members[value eq "\${userId}"]\`,
+    }],
+  }),
+});`
+    }
+
+    if (mappedFlowId === 'scim_filter_queries') {
+      return `// SCIM 2.0 Filter Queries (RFC 7644 Section 3.4.2)
+
+// Simple equality filter
+GET /Users?filter=userName eq "john@example.com"
+
+// Contains filter (useful for search)
+GET /Users?filter=name.familyName co "Smith"
+
+// Complex filter with AND/OR
+GET /Users?filter=active eq true and (emails.value co "@company.com")
+
+// Nested attribute filter
+GET /Users?filter=emails[type eq "work" and primary eq true]
+
+// Presence filter (attribute exists)
+GET /Users?filter=title pr
+
+// Comparison operators
+GET /Users?filter=meta.lastModified gt "2024-01-01T00:00:00Z"
+
+// Pagination
+GET /Users?startIndex=1&count=25
+
+// Sorting
+GET /Users?sortBy=name.familyName&sortOrder=ascending
+
+// Filter operators:
+// eq  - equals
+// ne  - not equals
+// co  - contains
+// sw  - starts with
+// ew  - ends with
+// gt  - greater than
+// lt  - less than
+// ge  - greater than or equal
+// le  - less than or equal
+// pr  - present (attribute exists)`
+    }
+
+    if (mappedFlowId === 'scim_schema_discovery') {
+      return `// SCIM 2.0 Schema Discovery (RFC 7644 Section 4)
+const SCIM_BASE = 'https://example.com/scim/v2';
+
+// 1. Discover server capabilities
+const config = await fetch(\`\${SCIM_BASE}/ServiceProviderConfig\`)
+  .then(r => r.json());
+
+console.log('PATCH supported:', config.patch.supported);
+console.log('Bulk max ops:', config.bulk.maxOperations);
+console.log('Filter max results:', config.filter.maxResults);
+
+// 2. Get available resource types
+const resourceTypes = await fetch(\`\${SCIM_BASE}/ResourceTypes\`)
+  .then(r => r.json());
+
+resourceTypes.Resources.forEach(rt => {
+  console.log(\`Resource: \${rt.name} at \${rt.endpoint}\`);
+  console.log(\`  Schema: \${rt.schema}\`);
+});
+
+// 3. Get detailed schema for User
+const userSchema = await fetch(
+  \`\${SCIM_BASE}/Schemas/urn:ietf:params:scim:schemas:core:2.0:User\`
+).then(r => r.json());
+
+userSchema.attributes.forEach(attr => {
+  console.log(\`\${attr.name}: \${attr.type} (\${attr.mutability})\`);
+});`
+    }
+
+    if (mappedFlowId === 'scim_bulk_operations') {
+      return `// SCIM 2.0 Bulk Operations (RFC 7644 Section 3.7)
+const SCIM_BASE = 'https://example.com/scim/v2';
+const TOKEN = 'your-bearer-token';
+
+// Bulk request to create multiple users
+const bulkResponse = await fetch(\`\${SCIM_BASE}/Bulk\`, {
+  method: 'POST',
+  headers: {
+    'Authorization': \`Bearer \${TOKEN}\`,
+    'Content-Type': 'application/scim+json',
+  },
+  body: JSON.stringify({
+    schemas: ['urn:ietf:params:scim:api:messages:2.0:BulkRequest'],
+    failOnErrors: 1, // Stop after first error
+    Operations: [
+      {
+        method: 'POST',
+        path: '/Users',
+        bulkId: 'user1',
+        data: {
+          schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
+          userName: 'alice@example.com',
+          name: { givenName: 'Alice', familyName: 'Smith' },
+        },
+      },
+      {
+        method: 'POST',
+        path: '/Users',
+        bulkId: 'user2',
+        data: {
+          schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
+          userName: 'bob@example.com',
+          name: { givenName: 'Bob', familyName: 'Jones' },
+        },
+      },
+      {
+        method: 'POST',
+        path: '/Groups',
+        bulkId: 'group1',
+        data: {
+          schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'],
+          displayName: 'New Team',
+          // Reference users by bulkId
+          members: [
+            { value: 'bulkId:user1' },
+            { value: 'bulkId:user2' },
+          ],
+        },
+      },
+    ],
+  }),
+}).then(r => r.json());
+
+// Check results
+bulkResponse.Operations.forEach(op => {
+  console.log(\`\${op.bulkId}: \${op.status} - \${op.location || op.response?.detail}\`);
+});`
+    }
+
     return `// Authorization Code Flow
 const authUrl = new URL('/oauth2/authorize', origin);
 authUrl.searchParams.set('response_type', 'code');
@@ -361,6 +578,26 @@ window.location.href = authUrl;`
     if (mappedFlowId === 'saml_single_logout') {
       badges.push({ label: 'Federated Logout', color: 'yellow', icon: Globe })
     }
+    // SCIM 2.0 badges
+    if (mappedFlowId.includes('scim')) {
+      badges.push({ label: 'Provisioning', color: 'purple', icon: Users })
+    }
+    if (mappedFlowId === 'scim_user_lifecycle') {
+      badges.push({ label: 'User CRUD', color: 'blue', icon: Server })
+      badges.push({ label: 'IdP Integration', color: 'cyan', icon: Globe })
+    }
+    if (mappedFlowId === 'scim_group_management') {
+      badges.push({ label: 'Group Sync', color: 'green', icon: Users })
+    }
+    if (mappedFlowId === 'scim_filter_queries') {
+      badges.push({ label: 'RFC 7644', color: 'yellow', icon: Code })
+    }
+    if (mappedFlowId === 'scim_schema_discovery') {
+      badges.push({ label: 'Auto-Config', color: 'cyan', icon: Server })
+    }
+    if (mappedFlowId === 'scim_bulk_operations') {
+      badges.push({ label: 'Batch Processing', color: 'blue', icon: Server })
+    }
     return badges
   }
 
@@ -370,6 +607,7 @@ window.location.href = authUrl;`
       case 'oidc': return 'OpenID Connect'
       case 'saml': return 'SAML 2.0'
       case 'spiffe': return 'SPIFFE/SPIRE'
+      case 'scim': return 'SCIM 2.0'
       default: return id || 'Protocol'
     }
   }

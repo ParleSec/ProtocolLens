@@ -203,5 +203,21 @@ export const protocolMeta: Record<string, {
       'Zero Trust Ready',
     ],
   },
+  // SCIM 2.0 - Identity Provisioning
+  scim: {
+    icon: 'Users',
+    color: 'purple',
+    gradient: 'from-purple-500 to-violet-500',
+    features: [
+      'User Provisioning',
+      'Group Management',
+      'Filter Queries',
+      'PATCH Operations',
+      'Bulk Operations',
+      'Schema Discovery',
+      'ETag Support',
+      'IdP Integration',
+    ],
+  },
 }
 
