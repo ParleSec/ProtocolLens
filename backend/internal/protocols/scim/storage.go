@@ -407,7 +407,7 @@ func (s *Storage) CreateGroup(ctx context.Context, group *Group) (*Group, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // Rollback is no-op after Commit
 
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO scim_groups (id, external_id, display_name, data, version, created_at, updated_at)
@@ -549,7 +549,7 @@ func (s *Storage) UpdateGroup(ctx context.Context, id string, group *Group, expe
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // Rollback is no-op after Commit
 
 	_, err = tx.ExecContext(ctx,
 		`UPDATE scim_groups SET external_id = ?, display_name = ?, data = ?, version = ?, updated_at = ?
@@ -820,7 +820,9 @@ func buildFilterClause(filter string, resourceType string) (string, []interface{
 func (s *Storage) SeedDemoData(ctx context.Context, baseURL string) error {
 	// Check if data already exists
 	var count int
-	s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM scim_users`).Scan(&count)
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM scim_users`).Scan(&count); err != nil {
+		return fmt.Errorf("failed to check existing data: %w", err)
+	}
 	if count > 0 {
 		return nil // Already seeded
 	}
@@ -887,7 +889,9 @@ func (s *Storage) SeedDemoData(ctx context.Context, baseURL string) error {
 				{Value: userIDs[1], Type: "User"},
 			},
 		}
-		s.CreateGroup(ctx, engineeringGroup)
+		if _, err := s.CreateGroup(ctx, engineeringGroup); err != nil {
+			return fmt.Errorf("failed to create Engineering group: %w", err)
+		}
 
 		allUsersGroup := &Group{
 			BaseResource: BaseResource{Schemas: []string{SchemaURNGroup}},
@@ -896,7 +900,9 @@ func (s *Storage) SeedDemoData(ctx context.Context, baseURL string) error {
 		for _, id := range userIDs {
 			allUsersGroup.Members = append(allUsersGroup.Members, MemberRef{Value: id, Type: "User"})
 		}
-		s.CreateGroup(ctx, allUsersGroup)
+		if _, err := s.CreateGroup(ctx, allUsersGroup); err != nil {
+			return fmt.Errorf("failed to create All Users group: %w", err)
+		}
 	}
 
 	return nil

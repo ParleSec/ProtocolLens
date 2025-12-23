@@ -1209,9 +1209,11 @@ func (p *Plugin) handleConnectionStatus(w http.ResponseWriter, r *http.Request) 
 // ================== Helper Functions ==================
 
 func (p *Plugin) emitEvent(eventType, name string, data map[string]interface{}) {
-	if p.lookingGlass != nil {
-		// TODO: Integrate with looking glass event system
-	}
+	// Event emission for Looking Glass integration
+	// Currently a no-op as SCIM events are logged via logProvisioningAction
+	_ = eventType
+	_ = name
+	_ = data
 }
 
 // logProvisioningAction logs a provisioning action from an external IdP
