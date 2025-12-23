@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
-  User, Globe, Shield, Database, Key, X
+  User, Globe, Shield, Database, Key, X, Users
 } from 'lucide-react'
 
 interface FlowStep {
@@ -199,6 +199,45 @@ const actorConfig: Record<string, {
     label: 'SVID Cache',
     shortLabel: 'Cache',
     color: '#fb923c', // orange
+  },
+  // SCIM 2.0 actors
+  'SCIM Server': {
+    icon: Users,
+    label: 'SCIM Server',
+    shortLabel: 'SCIM',
+    color: '#a855f7', // purple
+  },
+  'SCIM Client': {
+    icon: Globe,
+    label: 'SCIM Client',
+    shortLabel: 'Client',
+    color: '#60a5fa', // blue
+  },
+  // IdP is a common short form for Identity Provider (used in SCIM flows)
+  'IdP': {
+    icon: Shield,
+    label: 'Identity Provider',
+    shortLabel: 'IdP',
+    color: '#c084fc', // purple
+  },
+  // Additional SCIM actors for outbound provisioning flows
+  'Admin': {
+    icon: User,
+    label: 'Administrator',
+    shortLabel: 'Admin',
+    color: '#4ade80', // green
+  },
+  'External Server': {
+    icon: Database,
+    label: 'External SCIM Server',
+    shortLabel: 'External',
+    color: '#fb923c', // orange
+  },
+  'Database': {
+    icon: Database,
+    label: 'Database',
+    shortLabel: 'DB',
+    color: '#9ca3af', // gray
   },
 }
 

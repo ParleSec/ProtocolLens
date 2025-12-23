@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { 
   Shield, Eye, Terminal, Fingerprint, 
   ExternalLink, ChevronRight, Key, 
-  Code, FileSearch, Zap, FileKey
+  Code, FileSearch, Zap, FileKey, Users
 } from 'lucide-react'
 
 export function Dashboard() {
@@ -19,8 +19,8 @@ export function Dashboard() {
           <span className="text-2xl sm:text-3xl">🍜</span>
         </h1>
         <p className="text-surface-300 text-base sm:text-lg max-w-2xl">
-          Learn authentication protocols by running them. Execute real OAuth 2.0, OpenID Connect, 
-          SAML 2.0, and SPIFFE/SPIRE flows against working infrastructure and see exactly what happens at each step.
+          Learn authentication and identity protocols by running them. Execute real OAuth 2.0, OpenID Connect, 
+          SAML 2.0, SPIFFE/SPIRE, and SCIM 2.0 flows against working infrastructure and see exactly what happens at each step.
         </p>
       </header>
 
@@ -106,6 +106,14 @@ export function Dashboard() {
             flows={['x509_svid', 'jwt_svid', 'mtls', 'cert_rotation']}
             to="/looking-glass"
           />
+          <ProtocolCard
+            icon={Users}
+            name="SCIM 2.0"
+            description="Cross-domain identity provisioning"
+            color="purple"
+            flows={['user_lifecycle', 'group_mgmt', 'filters', 'bulk_ops']}
+            to="/looking-glass"
+          />
         </div>
       </section>
 
@@ -135,6 +143,11 @@ export function Dashboard() {
           <SpecLink url="https://spiffe.io/docs/latest/spiffe-about/spiffe-concepts/#spiffe-verifiable-identity-document-svid" title="X.509-SVID" label="X.509-SVID" />
           <SpecLink url="https://spiffe.io/docs/latest/spiffe-about/spiffe-concepts/#jwt-svid" title="JWT-SVID" label="JWT-SVID" />
           <SpecLink url="https://spiffe.io/docs/latest/spire-about/" title="SPIRE" label="SPIRE" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 mt-2">
+          <RFCLink number="7642" title="SCIM Concepts" />
+          <RFCLink number="7643" title="SCIM Schema" />
+          <RFCLink number="7644" title="SCIM Protocol" />
         </div>
       </section>
     </div>
@@ -223,7 +236,7 @@ function ProtocolCard({
   icon: React.ElementType
   name: string
   description: string
-  color: 'blue' | 'orange' | 'cyan' | 'green'
+  color: 'blue' | 'orange' | 'cyan' | 'green' | 'purple'
   flows: string[]
   to: string
 }) {
@@ -251,6 +264,12 @@ function ProtocolCard({
       bg: 'bg-green-500/10',
       text: 'text-green-400',
       tag: 'bg-green-500/10 text-green-300',
+    },
+    purple: {
+      border: 'border-purple-500/20 hover:border-purple-500/40',
+      bg: 'bg-purple-500/10',
+      text: 'text-purple-400',
+      tag: 'bg-purple-500/10 text-purple-300',
     },
   }
   const c = colors[color]
